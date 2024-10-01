@@ -23,6 +23,7 @@
 #define FMT_FAINT       SGR("2") 
 #define FMT_ITALIC      SGR("3")
 #define FMT_UNDERLINE   SGR("4")
+#define FMT_NOBOLD      SGR("22")
 #define FMT_FG_BLACK    SGR("30")
 #define FMT_FG_RED      SGR("31")
 #define FMT_FG_GREEN    SGR("32")

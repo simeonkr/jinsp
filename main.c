@@ -129,22 +129,49 @@ void print_cur_pos(char *s, int cols) {
     sprintf(s, FMT_RESET);
 }
 
+unsigned summarize_value(char *s, json_value value, int cols) {
+    switch (value.kind) {
+        case OBJECT:
+            return snprintf(s, cols + 1,
+                object_size(value.object) > 0 ? "{..}" : "{}");
+        case ARRAY:
+            return snprintf(s, cols + 1,
+                array_size(value.array) > 0 ? "[..]" : "[]");
+        case STRING:
+            // FIXME: handle newlines
+            return snprintf(s, cols + 1, "%s", value.string);
+        case NUMBER:
+            return snprintf(s, cols + 1, "%f", value.number);
+        case TRUE:
+            return snprintf(s, cols + 1, "true");
+        case FALSE:
+            return snprintf(s, cols + 1, "false");
+        case NUL:
+            return snprintf(s, cols + 1, "null");
+    }
+}
+
 // prints an element when key == "", a member otherwise
 void print_row(char *s, const char* key, int index, json_value value,
                int cols, int selected) {
     if (selected)
-        s += sprintf(s, FMT_BOLD FMT_BG_RED FMT_FG_WHITE);
+        s += sprintf(s, FMT_BG_RED FMT_FG_WHITE FMT_BOLD);
     else
-        s += sprintf(s, FMT_BG_BLACK FMT_FG_WHITE);
-    if (value.kind == OBJECT || value.kind == ARRAY)
-        s += sprintf(s, FMT_BOLD);
+        s += sprintf(s, FMT_BG_BLACK FMT_FG_WHITE FMT_BOLD);
 
     // FIXME: this won't handle unicode characters consuming more bytes!
     int cur_col = 0;
     if (strlen(key) == 0)
-        cur_col += snprintf(s, cols + 1, "%d", index);
+        cur_col += snprintf(s, cols + 1, "%d  ", index);
     else
-        cur_col += snprintf(s, cols + 1, "%s", key);
+        cur_col += snprintf(s, cols + 1, "%s  ", key);
+    cur_col = min(cur_col, cols);
+    assert(s[cur_col] == '\0');
+
+    s += sprintf(s + cur_col, FMT_NOBOLD);
+
+    if (cur_col < cols)
+        cur_col += summarize_value(s + cur_col, value, cols - cur_col);
     cur_col = min(cur_col, cols);
     assert(s[cur_col] == '\0');
 
@@ -154,69 +181,41 @@ void print_row(char *s, const char* key, int index, json_value value,
     sprintf(s + cols, FMT_RESET);
 }
 
-void summarize_value(char *s, json_value value, int cols) {
-    switch (value.kind) {
-        case OBJECT:
-            snprintf(s, cols + 1,
-                object_size(value.object) > 0 ? "{..}" : "{}");
-            break;
-        case ARRAY:
-            snprintf(s, cols + 1,
-                array_size(value.array) > 0 ? "[..]" : "[]");
-            break;
-        case STRING:
-            // FIXME: handle newlines
-            snprintf(s, cols + 1, "%s", value.string);
-            break;
-        case NUMBER:
-            snprintf(s, cols + 1, "%f", value.number);
-            break;
-        case TRUE:
-            snprintf(s, cols + 1, "true");
-            break;
-        case FALSE:
-            snprintf(s, cols + 1, "false");
-            break;
-        case NUL:
-            snprintf(s, cols + 1, "null");
-            break;
-    }
-}
-
-void preview_value(pane *p, json_value value) {
-    switch (value.kind) {
+void populate_view(pane *p, json_pos pos, int is_top) {
+    json_value value = pos.value;
+    int index = pos.index;
+    int scroll_lim = p->nrows / 2 + 1;
+    int off = index <= scroll_lim ? 0 : index - scroll_lim;
+    int curs_ri = min(index, scroll_lim);
+    switch (pos.value.kind) {
         case OBJECT:
             if (object_size(value.object) == 0) {
-                snprintf(p->rows[0], p->ncols + 1,
+                assert(is_top);
+                snprintf(p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty object>" FMT_RESET);
                 break;
             }
-            for (int ri = 0, di = 0;
+            for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
                 json_member memb = object_get(value.object, di);
-                char *s = p->rows[ri] + sprintf(p->rows[ri], FMT_BOLD FMT_FG_WHITE);
-                int cur_col = snprintf(s, p->ncols + 1, "%s ", memb.key);
-                s += sprintf(s + cur_col, FMT_RESET);
-                if (cur_col < p->ncols)
-                    summarize_value(s + cur_col, memb.val, p->ncols - cur_col);
+                print_row(p->rows[ri], memb.key, di, memb.val, p->ncols,
+                          !is_top && ri == curs_ri);
             }
             break;
         case ARRAY:
             if (array_size(value.array) == 0) {
-                snprintf(p->rows[0], p->ncols + 1,
+                assert(is_top);
+                snprintf(p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty array>" FMT_RESET);
                 break;
             }
-            for (int ri = 0, di = 0;
+            for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.array);
                  ri++, di++) {
                 json_value elt = array_get(value.array, di);
-                char *s = p->rows[ri] + sprintf(p->rows[ri], FMT_BOLD FMT_FG_WHITE);
-                int cur_col = snprintf(s, p->ncols + 1, "%d ", di);
-                s += sprintf(s + cur_col, FMT_RESET);
-                if (cur_col < p->ncols)
-                    summarize_value(s + cur_col, elt, p->ncols - cur_col);
+                print_row(p->rows[ri], "", di, elt, p->ncols,
+                          !is_top && ri == curs_ri);
             }
             break;
         case STRING: {
@@ -231,40 +230,6 @@ void preview_value(pane *p, json_value value) {
         }
         default:
             summarize_value(p->rows[0], value, p->ncols + 1);
-    }
-}
-
-void populate_view(pane *p, json_pos pos, int is_top) {
-    json_value value = pos.value;
-    int index = pos.index;
-    int scroll_lim = p->nrows / 2 + 1;
-    int off = index <= scroll_lim ? 0 : index - scroll_lim;
-    int curs_ri = min(index, scroll_lim);
-    if (is_top) {
-        preview_value(p, pos.value);
-        return;
-    }
-    switch (pos.value.kind) {
-        case OBJECT:
-            for (int ri = 0, di = off;
-                 ri < p->nrows && di < object_size(value.object);
-                 ri++, di++) {
-                json_member memb = object_get(value.object, di);
-                print_row(p->rows[ri], memb.key, di, memb.val, p->ncols,
-                          ri == curs_ri);
-            }
-            break;
-        case ARRAY:
-            for (int ri = 0, di = off;
-                 ri < p->nrows && di < array_size(value.array);
-                 ri++, di++) {
-                json_value elt = array_get(value.array, di);
-                print_row(p->rows[ri], "", di, elt, p->ncols,
-                          ri == curs_ri);
-            }
-            break;
-        default:
-            assert(0);
     }
 }
 
