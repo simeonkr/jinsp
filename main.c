@@ -117,6 +117,16 @@ void print_cur_pos(string *s) {
     string_printfa(s, FMT_RESET);
 }
 
+const char* get_value_fmt(json_value value) {
+    switch(value.kind) {
+        case OBJECT:
+        case ARRAY:
+            return FMT_UNDERLINE FMT_FG_WHITE;
+        default:
+            return FMT_FG_WHITE;
+    }
+}
+
 void populate_view(pane *p, json_pos pos, int is_top) {
     json_value value = pos.value;
     int index = pos.index;
@@ -128,26 +138,30 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
+                const char* fmt = get_value_fmt(
+                    object_get(value.object, di).val);
                 if (!is_top && ri == curs_ri)
                     string_printf(&p->rows[ri],
-                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s" FMT_RESET,
-                        object_get(value.object, di).key);
+                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s%s" FMT_RESET,
+                        fmt, object_get(value.object, di).key);
                 else
                     string_printf(&p->rows[ri], 
-                        FMT_BG_BLACK FMT_FG_WHITE "%s" FMT_RESET,
-                        object_get(value.object, di).key);
+                        FMT_BG_BLACK FMT_FG_WHITE "%s%s" FMT_RESET,
+                        fmt, object_get(value.object, di).key);
             }
             break;
         case ARRAY:
             for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.object);
                  ri++, di++) {
+                const char* fmt = get_value_fmt(
+                    array_get(value.array, di));
                 if (!is_top && ri == curs_ri)
                     string_printf(&p->rows[ri],
-                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%d" FMT_RESET, di);
+                        FMT_BOLD FMT_BG_RED "%s%d" FMT_RESET, fmt, di);
                 else
                     string_printf(&p->rows[ri], 
-                        FMT_BG_BLACK FMT_FG_WHITE "%d" FMT_RESET, di);
+                        FMT_BG_BLACK "%s%d" FMT_RESET, fmt, di);
                 printf(FMT_RESET);
             }
             break;
