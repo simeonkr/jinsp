@@ -45,6 +45,7 @@ struct {
 
 json_stack stack;
 
+int searching;
 char search_str[256];
 
 void term_setup() {
@@ -397,8 +398,12 @@ void draw() {
             string_clear(&window.view_panes[i].rows[ri]);
 
     // fill each pane with corresponding data
-    string_nprintf(&window.status_bar.rows[0], window.status_bar.ncols + 1,
-        "%s", input_filename);
+    if (!searching)
+        string_nprintf(&window.status_bar.rows[0], window.status_bar.ncols + 1,
+            "%s", input_filename);
+    else
+        string_nprintf(&window.status_bar.rows[0], window.status_bar.ncols + 1,
+            "/%s", search_str);
     print_cur_pos(&window.top_bar.rows[0], window.top_bar.ncols);
     assert(stack.size >= 1);
     int num_view_panes = min(stack.size, NUM_VIEW_PANES);
@@ -468,6 +473,13 @@ void move_to_next(int off) {
     }
 }
 
+void search_next() {
+    json_stack search_stack = stack;
+    search(&search_stack, search_str);
+    if (search_stack.size > 0)
+        stack = search_stack;
+}
+
 void handle_mouse_press(int x, int y) {
     TRACE("Mouse %d, %d\n", x, y);
     // find which pane was clicked
@@ -524,8 +536,16 @@ void loop() {
         int num_read = read(STDIN_FILENO, &in, 6);
         switch (in[0]) {
             case '\x1b':
-                if (num_read == 1) // ESC key
-                    return;
+                if (num_read == 1) { // ESC key
+                    if (!searching)
+                        return;
+                    else {
+                        searching = 0;
+                        search_str[0] = '\0';
+                        draw();
+                        break;
+                    }
+                }
                 if (num_read >= 3 && in[1] == '[') {
                     switch (in[2]) {
                         case KEY_UP:
@@ -572,24 +592,57 @@ void loop() {
                 }
                 break;
             case '\x7f': // Backspace key
-                move_to_parent();
+                if (!searching) {
+                    move_to_parent();
+                    pane_resize();
+                }
+                else if (search_str[0] != '\0') {
+                    int i;
+                    for (i = 0; search_str[i] != '\0'; i++);
+                    search_str[i-1] = '\0';
+                }
                 draw();
                 break;
             case '\x0a': // Enter key
-                move_to_child();
-                draw();
-                break;
-            case 'n': {
-                json_stack search_stack = stack;
-                search(&search_stack, search_str);
-                if (search_stack.size > 0)
-                    stack = search_stack;
+                if (!searching)
+                    move_to_child();
+                else {
+                    searching = 0;
+                    search_next();
+                }
                 pane_resize();
                 draw();
                 break;
+            case '/':
+                search_str[0] = '\0';
+                searching = 1;
+                draw();
+                break;
+            case 'n': {
+                if (!searching) {
+                    if (search_str[0] == '\0')
+                        break;
+                    search_next();
+                    pane_resize();
+                    draw();
+                    break;
+                }
+                // fallthrough
             }
             case 'q':
-                return;
+                if (!searching)
+                    return;
+                // fallthrough
+            default: {
+                if (searching) {
+                    int i;
+                    for (i = 0; search_str[i] != '\0'; i++);
+                    search_str[i] = in[0];
+                    search_str[i+1] = '\0';
+                    draw();
+                }
+            }
+
         }
     }
 }

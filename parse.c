@@ -37,7 +37,7 @@ static void error(parse_state *ps) {
 }
 
 static inline void tracep(parse_state *ps, const char *msg) {
-#ifdef DEBUG
+#ifdef DEBUG_PARSE
     TRACE("%5d,%3d ", ps->line, ps->col);
     char c = cur(ps);
     if (c == '\n')

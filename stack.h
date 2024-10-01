@@ -50,10 +50,10 @@ static void traverse_next(json_stack *stack) {
         stack_peek(stack)->index++;
 }
 
-// search for str starting from position on top of stack, until either a match
-// has been found or all contents of the stack have been popped
+// search for str starting from (but not including) position on top of stack, 
+// until either a match has been found or all contents have been popped
 void search(json_stack *stack, const char *str) {
-    while (stack->size > 0) {
+    for (int i = 0; stack->size > 0; i++) {
         trace_stack(stack);
         json_pos *top = stack_peek(stack);
         json_value val = top->value;
@@ -64,7 +64,7 @@ void search(json_stack *stack, const char *str) {
                 else {
                     json_member next = object_get(val.object, top->index);
                     stack_push(stack, (json_pos){ next.val, 0 });
-                    if (match(next.key, str))
+                    if (i > 0 && match(next.key, str))
                         return;
                 }
                 break;
@@ -77,30 +77,30 @@ void search(json_stack *stack, const char *str) {
                 }
                 break;
             case STRING:
-                if (match(val.string, str))
+                if (i > 0 && match(val.string, str))
                     return;
                 traverse_next(stack);
                 break;
             case NUMBER: {
                 char s[32];
                 snprintf(s, 32, "%f", val.number);
-                if (match(s, str))
+                if (i > 0 && match(s, str))
                     return;
                 traverse_next(stack);
                 break;
             }
             case TRUE:
-                if (match("true", str))
+                if (i > 0 && match("true", str))
                     return;
                 traverse_next(stack);
                 break;
             case FALSE:
-                if (match("false", str))
+                if (i > 0 && match("false", str))
                     return;
                 traverse_next(stack);
                 break;
             case NUL:
-                if (match("null", str))
+                if (i > 0 && match("null", str))
                     return;
                 traverse_next(stack);
                 break;
