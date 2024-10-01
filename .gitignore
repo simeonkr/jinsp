@@ -1,7 +1,4 @@
 *.o
 *.objdump
 *.ll
-*.dot
-*.yaml
-callgrind.out
-.vscode
+trace.txt
