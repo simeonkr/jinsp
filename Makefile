@@ -1,6 +1,5 @@
 CC = clang
 CFLAGS = -std=c99 -Wall -O3 -gdwarf-4
-CFLAGS += -D_POSIX_SOURCE # for fileno()
 OPT = /usr/lib/llvm-14/bin/opt
 OBJFILES = json.o parse.o print.o str.o
 

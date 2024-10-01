@@ -28,8 +28,8 @@
 #define FMT_FG_GREEN    SGR("32")
 #define FMT_FG_WHITE    SGR("37")
 #define FMT_BG_BLACK    SGR("90")
-#define FMT_BG_RED      SGR("91")
-#define FMT_BG_GREEN    SGR("92")
+#define FMT_BG_RED      SGR("41")
+#define FMT_BG_GREEN    SGR("42")
 #define FMT_BG_WHITE    SGR("47")
 
 #define KEY_UP          'A'

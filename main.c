@@ -30,31 +30,11 @@ void term_setup() {
 	printf(ALT_BUFF_EN);
 	printf(CURS_HIDE);
 	struct termios term;
-	tcgetattr(fileno(stdin), &term);
+	tcgetattr(STDIN_FILENO, &term);
 	saved_term = term;
 	term.c_lflag &= ~ECHO;
 	term.c_lflag &= ~ICANON;
-	tcsetattr(fileno(stdin), 0, &term);
-}
-
-void loop() {
-	while (1) {
-		char in = getchar();
-		fprintf(trace, "getchar1(): %x\n", in);
-		fflush(trace);
-		if (in == '\x1b') {
-			in = getchar();
-			fprintf(trace, "getchar2(): %x\n", in);
-			fflush(trace);
-			switch (in) {
-				case EOF: // ESC key
-					return;
-				case KEY_DOWN:
-					panels[0].cur_row++;
-			}
-
-		}
-	}
+	tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
 }
 
 void draw_panel(panel *p) {
@@ -66,9 +46,9 @@ void draw_panel(panel *p) {
 			assert(row.size <= p->cols);
 			printf(CUP("%d", "%d"), p->top + n + 1, p->left + 1);
 			if (p->cur_row == n)
-				printf(FMT_BG_RED "%s" FMT_FG_WHITE, row.data);
+				printf(FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s", row.data);
 			else
-				printf(FMT_BG_BLACK "%s" FMT_FG_WHITE, row.data);
+				printf(FMT_BG_BLACK FMT_FG_WHITE "%s", row.data);
 			printf(FMT_RESET);
 		}
 	}
@@ -79,11 +59,12 @@ void redraw() {
 	for (int i = 0; i < num_panels; i++) {
 		draw_panel(&panels[i]);
 	}
+	fflush(STDIN_FILENO);
 }
 
 void on_resize() {
 	struct winsize wsize;
-	ioctl(fileno(stdin), TIOCGWINSZ, &wsize);
+	ioctl(STDIN_FILENO, TIOCGWINSZ, &wsize);
 	win_rows = wsize.ws_row;
 	win_cols = wsize.ws_col;
 
@@ -136,13 +117,45 @@ void on_term(int i) {
 }
 
 void fin() {
-	tcsetattr(fileno(stdin), 0, &saved_term);
+	tcsetattr(STDIN_FILENO, 0, &saved_term);
 	printf(CURS_SHOW);
 	printf(ALT_BUFF_DIS);
 	fclose(trace);
 }
 
+#define READ_BUF_SIZE 4
+
+void loop() {
+	fflush(STDIN_FILENO); // TODO: why is this necessary?
+	while (1) {
+		char in[READ_BUF_SIZE];
+		int num_read = read(STDIN_FILENO, &in, READ_BUF_SIZE);
+		if (in[0] == '\x1b') {
+			if (num_read == 1) // ESC key
+				return;
+			if (num_read == 3 && in[1] == '[') {
+				switch (in[2]) {
+					case KEY_DOWN:
+						if (panels[0].cur_row < panels[0].rows - 1)
+							panels[0].cur_row++;
+						redraw();
+						break;
+					case KEY_UP:
+						if (panels[0].cur_row > 0)
+							panels[0].cur_row--;
+						redraw();
+						break;
+				}
+			}
+		}
+	}
+}
+
 int main() {
+  	if(!isatty(STDIN_FILENO)){
+      fprintf(stderr, "Not a terminal.\n");
+      exit(EXIT_FAILURE);
+    }
 	trace = fopen("trace.txt", "w");
 	atexit(fin);
 	signal(SIGINT, on_term);
