@@ -88,7 +88,7 @@ void pane_resize() {
     }
 }
 
-void populate_view(pane *p, json_pos pos) {
+void populate_view(pane *p, json_pos pos, int in_focus) {
     json_value value = pos.value;
     int index = pos.index;
     int scroll_lim = p->nrows / 2 + 1;
@@ -99,7 +99,7 @@ void populate_view(pane *p, json_pos pos) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
-                if (ri == curs_ri)
+                if (in_focus && ri == curs_ri)
                     string_printf(&p->rows[ri],
                         FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s" FMT_RESET,
                         object_get(value.object, di).key);
@@ -113,10 +113,9 @@ void populate_view(pane *p, json_pos pos) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.object);
                  ri++, di++) {
-                if (ri == curs_ri)
+                if (in_focus && ri == curs_ri)
                     string_printf(&p->rows[ri],
-                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%d" FMT_RESET, 
-                        di);
+                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%d" FMT_RESET, di);
                 else
                     string_printf(&p->rows[ri], 
                         FMT_BG_BLACK FMT_FG_WHITE "%d" FMT_RESET, di);
@@ -154,16 +153,18 @@ void draw_pane(pane *p) {
 }
 
 void draw() {
+    // clear existing data
+    for (int i = 0; i < NUM_VIEW_PANES; i++)
+        for (int ri = 0; ri < window.view_panes[i].nrows; ri++)
+            string_printf(&window.view_panes[i].rows[ri], "");
+
     // fill each pane with corresponding data
     string_printf(&window.status_bar.rows[0], "%s", input_filename);
     TRACE("%s\n", window.status_bar.rows[0].data);
     assert(stack.size >= 1);
     int num_view_panes = min(stack.size, NUM_VIEW_PANES);
-    for (int i = 0; i < num_view_panes; i++) {
-        if (i >= stack.size)
-            break;
-        populate_view(&window.view_panes[i],
-            *stack_peekn(&stack, num_view_panes - 1 - i));
+    for (int i = num_view_panes - 1, si = 0; i >= 0; i--, si++) {
+        populate_view(&window.view_panes[i], *stack_peekn(&stack, si), si == 1);
     }
 
     printf(ED("2"));
@@ -175,7 +176,7 @@ void draw() {
 
 void move_to_parent() {
     TRACE("move_to_parent: stack.size = %d\n", stack.size);
-    if (stack.size > 1)
+    if (stack.size > 2)
         stack_pop(&stack);
 }
 
@@ -199,33 +200,40 @@ void move_to_child() {
 
 void move_to_prev() {
     TRACE("move_to_prev: stack.size = %d\n", stack.size);
-    if (stack.size == 1)
-        return;
-    json_pos *cur = stack_peekn(&stack, 1);
-    cur->index = max(cur->index - 1, 0);
+    if (stack.size > 1) {
+        stack_pop(&stack);
+        json_pos *cur = stack_peek(&stack);
+        cur->index = max(cur->index - 1, 0);
+        move_to_child();
+    }
 }
 
 void move_to_next() {
-    TRACE("move_to_next: stack.size = %d\n", stack.size);
-    if (stack.size == 1)
-        return;
-    json_pos *cur = stack_peekn(&stack, 1);
-    int max_idx = 0;
-    switch (cur->value.kind) {
-        case OBJECT:
-            max_idx = object_size(cur->value.object) - 1;
-            break;
-        case ARRAY:
-            max_idx = array_size(cur->value.array) - 1;
-            break;
-        default:
-            break;
+    if (stack.size > 1) {
+        stack_pop(&stack);
+        json_pos *cur = stack_peek(&stack);
+        int max_idx = 0;
+        TRACE("cur->value.kind: %d\n", cur->value.kind);
+        switch (cur->value.kind) {
+            case OBJECT:
+                max_idx = object_size(cur->value.object) - 1;
+                TRACE("object\n");
+                break;
+            case ARRAY:
+                TRACE("array\n");
+                max_idx = array_size(cur->value.array) - 1;
+                break;
+            default:
+                break;
+        }
+        cur->index = min(cur->index + 1, max_idx);
+        move_to_child();
+        TRACE("move_to_next: stack.size = %d, idx = %d, max_idx=%d\n", 
+            stack.size, cur->index, max_idx);
     }
-    cur->index = min(cur->index + 1, max_idx);
 }
 
 void loop() {
-    fflush(STDIN_FILENO); // TODO: why is this necessary?
     while (1) {
         char in[4];
         int num_read = read(STDIN_FILENO, &in, 4);
@@ -311,7 +319,7 @@ int main(int argc, char **argv) {
 
     FILE *f = fopen(input_filename, "r");
     if (!f) {
-        fprintf(stderr, "Error reading input file.");
+        fprintf(stderr, "Error reading input file.\n");
         exit(EXIT_FAILURE);
     }
     parse_result pr = parse_json(f);
