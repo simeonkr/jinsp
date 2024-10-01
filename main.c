@@ -2,8 +2,16 @@
 #include <stdio.h>
 #include <signal.h>
 #include "term.h"
+#include "str.h"
 
-int term_w, term_h;
+int term_h, term_w;
+
+typedef struct {
+	int top, left;
+	int rows, cols;
+	string *left_rows, *right_rows;
+} panel;
+panel *panels;
 
 void term_setup() {
 	printf(ALT_BUFF_EN);
@@ -19,8 +27,25 @@ void loop() {
 	} while (in != '\x1b');
 }
 
-void on_resize() {
+void draw_panel(panel *p) {
+	for (int n = 0; n < p->rows; n++) {
+		printf(CUP("%d", "%d"), p->top + n, p->left);
+		string row = p->left_rows[n];
+		assert (row.size <= p->cols);
+		printf(row.data);
+	}
+}
 
+void draw() {
+	for (panel *p = panels; p != NULL; p++) {
+		draw_panel(p);
+	}
+}
+
+void on_resize() {
+	// TODO: update term_w and term_h first
+
+	draw();
 }
 
 void on_int(int i) {
