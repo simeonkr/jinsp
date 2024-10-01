@@ -154,21 +154,104 @@ void print_row(char *s, const char* key, int index, json_value value,
     sprintf(s + cols, FMT_RESET);
 }
 
+void summarize_value(char *s, json_value value, int cols) {
+    switch (value.kind) {
+        case OBJECT:
+            snprintf(s, cols + 1,
+                object_size(value.object) > 0 ? "{..}" : "{}");
+            break;
+        case ARRAY:
+            snprintf(s, cols + 1,
+                array_size(value.array) > 0 ? "[..]" : "[]");
+            break;
+        case STRING:
+            // FIXME: handle newlines
+            snprintf(s, cols + 1, "%s", value.string);
+            break;
+        case NUMBER:
+            snprintf(s, cols + 1, "%f", value.number);
+            break;
+        case TRUE:
+            snprintf(s, cols + 1, "true");
+            break;
+        case FALSE:
+            snprintf(s, cols + 1, "false");
+            break;
+        case NUL:
+            snprintf(s, cols + 1, "null");
+            break;
+    }
+}
+
+void preview_value(pane *p, json_value value) {
+    switch (value.kind) {
+        case OBJECT:
+            if (object_size(value.object) == 0) {
+                snprintf(p->rows[0], p->ncols + 1,
+                    FMT_ITALIC "<Empty object>" FMT_RESET);
+                break;
+            }
+            for (int ri = 0, di = 0;
+                 ri < p->nrows && di < object_size(value.object);
+                 ri++, di++) {
+                json_member memb = object_get(value.object, di);
+                char *s = p->rows[ri] + sprintf(p->rows[ri], FMT_BOLD FMT_FG_WHITE);
+                int cur_col = snprintf(s, p->ncols + 1, "%s ", memb.key);
+                s += sprintf(s + cur_col, FMT_RESET);
+                if (cur_col < p->ncols)
+                    summarize_value(s + cur_col, memb.val, p->ncols - cur_col);
+            }
+            break;
+        case ARRAY:
+            if (array_size(value.array) == 0) {
+                snprintf(p->rows[0], p->ncols + 1,
+                    FMT_ITALIC "<Empty array>" FMT_RESET);
+                break;
+            }
+            for (int ri = 0, di = 0;
+                 ri < p->nrows && di < array_size(value.array);
+                 ri++, di++) {
+                json_value elt = array_get(value.array, di);
+                char *s = p->rows[ri] + sprintf(p->rows[ri], FMT_BOLD FMT_FG_WHITE);
+                int cur_col = snprintf(s, p->ncols + 1, "%d ", di);
+                s += sprintf(s + cur_col, FMT_RESET);
+                if (cur_col < p->ncols)
+                    summarize_value(s + cur_col, elt, p->ncols - cur_col);
+            }
+            break;
+        case STRING: {
+            char *s = value.string;
+            unsigned strLen = strlen(value.string);
+            for (int ri = 0, si = 0; ri < p->nrows && si < strLen;
+                 ri++, si += p->ncols) {
+                // FIXME: handle newlines
+                snprintf(p->rows[ri], p->ncols + 1, "%s", s + si);
+            }
+            break;
+        }
+        default:
+            summarize_value(p->rows[0], value, p->ncols + 1);
+    }
+}
+
 void populate_view(pane *p, json_pos pos, int is_top) {
     json_value value = pos.value;
     int index = pos.index;
     int scroll_lim = p->nrows / 2 + 1;
     int off = index <= scroll_lim ? 0 : index - scroll_lim;
     int curs_ri = min(index, scroll_lim);
+    if (is_top) {
+        preview_value(p, pos.value);
+        return;
+    }
     switch (pos.value.kind) {
-        // TODO: preview objects/arrays if is_top
         case OBJECT:
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
                 json_member memb = object_get(value.object, di);
                 print_row(p->rows[ri], memb.key, di, memb.val, p->ncols,
-                          !is_top && ri == curs_ri);
+                          ri == curs_ri);
             }
             break;
         case ARRAY:
@@ -177,25 +260,11 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                  ri++, di++) {
                 json_value elt = array_get(value.array, di);
                 print_row(p->rows[ri], "", di, elt, p->ncols,
-                          !is_top && ri == curs_ri);
+                          ri == curs_ri);
             }
             break;
-        case STRING:
-            // TODO: wrap the string if is_top
-            snprintf(p->rows[0], p->ncols, "%s", value.string);
-            break;
-        case NUMBER:
-            snprintf(p->rows[0], p->ncols, "%f", value.number);
-            break;
-        case TRUE:
-            snprintf(p->rows[0], p->ncols, "true");
-            break;
-        case FALSE:
-            snprintf(p->rows[0], p->ncols, "false");
-            break;
-        case NUL:
-            snprintf(p->rows[0], p->ncols, "null");
-            break;
+        default:
+            assert(0);
     }
 }
 
