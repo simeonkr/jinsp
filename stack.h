@@ -44,65 +44,80 @@ static int match(const char *haystack, const char *needle) {
     return strstr(haystack, needle) != NULL;
 }
 
-static void traverse_next(json_stack *stack) {
+static void traverse_next(json_stack *stack, int rev) {
     stack_pop(stack);
-    if (stack->size > 0)
-        stack_peek(stack)->index++;
+    if (stack->size > 0) {
+        if (!rev)
+            stack_peek(stack)->index++;
+        else
+            stack_peek(stack)->index--;
+    }
+}
+
+static int first_index(json_value val, int rev) {
+    if (rev && val.kind == OBJECT)
+        return object_size(val.object) - 1;
+    else if (rev && val.kind == ARRAY)
+        return array_size(val.array) - 1;
+    else
+        return 0;
 }
 
 // search for str starting from (but not including) position on top of stack, 
 // until either a match has been found or all contents have been popped
-void search(json_stack *stack, const char *str) {
+void search(json_stack *stack, const char *str, int rev) {
     for (int i = 0; stack->size > 0; i++) {
         trace_stack(stack);
         json_pos *top = stack_peek(stack);
         json_value val = top->value;
         switch (val.kind) {
             case OBJECT:
-                if (top->index >= object_size(val.object))
-                    traverse_next(stack);
+                if (top->index >= object_size(val.object) || top->index < 0)
+                    traverse_next(stack, rev);
                 else {
                     json_member next = object_get(val.object, top->index);
-                    stack_push(stack, (json_pos){ next.val, 0 });
+                    int si = first_index(next.val, rev);
+                    stack_push(stack, (json_pos){ next.val, si });
                     if (i > 0 && match(next.key, str))
                         return;
                 }
                 break;
             case ARRAY:
-                if (top->index >= array_size(val.array))
-                    traverse_next(stack);
+                if (top->index >= array_size(val.array) || top->index < 0)
+                    traverse_next(stack, rev);
                 else {
                     json_value next = array_get(val.array, top->index);
-                    stack_push(stack, (json_pos){ next, 0 });
+                    int si = first_index(next, rev);
+                    stack_push(stack, (json_pos){ next, si });
                 }
                 break;
             case STRING:
                 if (i > 0 && match(val.string, str))
                     return;
-                traverse_next(stack);
+                traverse_next(stack, rev);
                 break;
             case NUMBER: {
                 char s[32];
                 snprintf(s, 32, "%f", val.number);
                 if (i > 0 && match(s, str))
                     return;
-                traverse_next(stack);
+                traverse_next(stack, rev);
                 break;
             }
             case TRUE:
                 if (i > 0 && match("true", str))
                     return;
-                traverse_next(stack);
+                traverse_next(stack, rev);
                 break;
             case FALSE:
                 if (i > 0 && match("false", str))
                     return;
-                traverse_next(stack);
+                traverse_next(stack, rev);
                 break;
             case NUL:
                 if (i > 0 && match("null", str))
                     return;
-                traverse_next(stack);
+                traverse_next(stack, rev);
                 break;
         }
     }

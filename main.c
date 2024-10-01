@@ -473,9 +473,9 @@ void move_to_next(int off) {
     }
 }
 
-void search_next() {
+void search_next(int rev) {
     json_stack search_stack = stack;
-    search(&search_stack, search_str);
+    search(&search_stack, search_str, rev);
     if (search_stack.size > 0)
         stack = search_stack;
 }
@@ -608,7 +608,7 @@ void loop() {
                     move_to_child();
                 else {
                     searching = 0;
-                    search_next();
+                    search_next(0);
                 }
                 pane_resize();
                 draw();
@@ -622,7 +622,19 @@ void loop() {
                 if (!searching) {
                     if (search_str[0] == '\0')
                         break;
-                    search_next();
+                    search_next(0);
+                    pane_resize();
+                    draw();
+                    break;
+                }
+                // fallthrough
+            }
+            case 'b':
+            case 'N': {
+                if (!searching) {
+                    if (search_str[0] == '\0')
+                        break;
+                    search_next(1);
                     pane_resize();
                     draw();
                     break;
