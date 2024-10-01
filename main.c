@@ -111,13 +111,19 @@ void pane_resize() {
     }
 }
 
+typedef struct {
+    int cols, num_read;
+} print_cols_r;
+
 // returns the number of columns expected to be occupied
-int print_cols(buffer *dest, const char *src, int num_cols, int escape) {
+print_cols_r print_cols(buffer *dest, const char *src, int num_cols,
+                        int escape) {
     assert (dest->raw_size >= 1 && dest->data[dest->raw_size - 1] == '\0');
     dest->raw_size--;
 
     int cols = 0;
-    for (int i = 0; src[i] != '\0' && cols < num_cols; ) {
+    int i = 0;
+    for (; src[i] != '\0' && cols < num_cols; ) {
         unsigned char c = src[i];
         if (escape && c == '\n') {
             buffer_putchar(dest, '\\');
@@ -138,6 +144,7 @@ int print_cols(buffer *dest, const char *src, int num_cols, int escape) {
             cols += 2;
         }
         else if (c == '\n') {
+            i++;
             break;
         }
         else if (c <= 0x7f) {
@@ -165,7 +172,7 @@ int print_cols(buffer *dest, const char *src, int num_cols, int escape) {
         }
     }
     buffer_putchar(dest, '\0');
-    return cols;
+    return (print_cols_r){cols, i};
 }
 
 void print_cur_pos(buffer *dest, int cols) {
@@ -177,7 +184,7 @@ void print_cur_pos(buffer *dest, int cols) {
             case OBJECT: {
                 const char* key = object_get(value.object, index).key;
                 cols -= string_nprintf(dest, cols + 1, "%c", '.');
-                cols -= print_cols(dest, key, cols, 1);
+                cols -= print_cols(dest, key, cols, 1).cols;
                 break;
             }
             case ARRAY:
@@ -199,7 +206,7 @@ int summarize_value(buffer *dest, json_value value, int cols) {
             return string_nprintf(dest, cols + 1,
                 array_size(value.array) > 0 ? "[..]" : "[]");
         case STRING:
-            return print_cols(dest, value.string, cols, 1);
+            return print_cols(dest, value.string, cols, 1).cols;
         case NUMBER:
             return string_nprintf(dest, cols + 1, "%f", value.number);
         case TRUE:
@@ -222,7 +229,7 @@ void print_row(buffer *dest, const char* key, int index, json_value value,
     if (strlen(key) == 0)
         cols -= string_nprintf(dest, cols + 1, "%d  ", index);
     else {
-        cols -= print_cols(dest, key, cols, 1);
+        cols -= print_cols(dest, key, cols, 1).cols;
         cols -= string_nprintf(dest, cols + 1, "  ");
     }
     assert(dest->data[dest->raw_size - 1] == '\0');
@@ -282,11 +289,8 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             break;
         case STRING: {
             char *s = value.string;
-            unsigned strLen = strlen(value.string);
-            for (int ri = 0, si = 0; ri < p->nrows && si < strLen;
-                 ri++, si += p->ncols) {
-                // FIXME: handle newlines
-                print_cols(&p->rows[ri], s + si, p->ncols, 0);
+            for (int i = 0, ri = 0; ri < p->nrows && s[i] != '\0'; ri++) {
+                s += print_cols(&p->rows[ri], &s[i], p->ncols, 0).num_read;
             }
             break;
         }
