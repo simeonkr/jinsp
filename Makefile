@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -std=c99 -Wall -O0 -g -DDEBUG
+CC = clang
+CFLAGS = -std=c99 -Wall -fsave-optimization-record -O3 -g
 OBJFILES = json.o parse.o print.o
 
 test: test.o $(OBJFILES)
