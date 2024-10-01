@@ -3,7 +3,7 @@
     "key2" : [
         "element1",
         "element2",
-        "abc\t\"\\5m\uC2B5 µ",
+        "abc\t\"\\5m\u00B5 µ",
         "hello\nworld",
         [ 0,-1,2.12,3e-01,-1.2E16 ],
         {"red" : 100, "green" : 200, "blue" : 200},

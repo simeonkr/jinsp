@@ -286,6 +286,29 @@ static int parse_character(parse_state *ps, char *s) {
     }
 }
 
+// https://en.wikipedia.org/wiki/UTF-8#Encoding
+static inline int utf8_encode(char *dest, wchar_t src) {
+    if (src < 0x80) {
+        dest[0] = src;
+        return 1;
+    }
+    else if (src < 0x800) {
+        dest[0] = 0b11000000 | (src & 0x0f00) >> 6 | (src & 0x00c0) >> 6;
+        dest[1] = 0b10000000 | (src & 0x0030) | (src & 0x000f);
+        return 2;
+    }
+    else if (src < 0x10000) {
+        dest[0] = 0b11100000 | (src & 0xf000) >> 12;
+        dest[1] = 0b10000000 | (src & 0x0f00) >> 6 | (src & 0x00c0) >> 6;
+        dest[2] = 0b10000000 | (src & 0x0030) | (src & 0x000f);
+        return 3;
+    }
+    else {
+        // we won't encode values larger than \uFFFF
+        assert(0);
+    }
+}
+
 static int parse_escape(parse_state *ps, char *s) {
     tracep(ps, "escape");
     parse_char(ps, '\\');
@@ -306,9 +329,11 @@ static int parse_escape(parse_state *ps, char *s) {
     else if (consume(ps, 't'))
         *s = '\t';
     else if (consume(ps, 'u')) {
-        s[0] = parse_hex(ps) << 4 | parse_hex(ps);
-        s[1] = parse_hex(ps) << 4 | parse_hex(ps); 
-        return 2;
+        wchar_t wc = parse_hex(ps) << 12 |
+                     parse_hex(ps) << 8  |
+                     parse_hex(ps) << 4  |
+                     parse_hex(ps);
+        return utf8_encode(s, wc);
     }
     else {
         error(ps);

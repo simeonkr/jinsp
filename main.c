@@ -113,7 +113,8 @@ void pane_resize() {
 
 // https://en.wikipedia.org/wiki/UTF-8#Encoding
 static inline wchar_t utf8_decode(const unsigned char *c) {
-    assert  (c[0] >= 0b11000000);
+    if      (c[0] < 0b11000000)
+        return c[0];
     if      (c[0] < 0b11100000)
         return (c[0] & 0b00011111) << 6  |
                (c[1] & 0b00111111);
