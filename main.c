@@ -7,24 +7,21 @@
 #include <assert.h>
 #include "term.h"
 #include "str.h"
+#include "json.h"
+#include "parse.h"
+#include "display.h"
+#include "trace.h"
 
-FILE *trace;
+FILE *input;
 
+int term_initialized;
 struct termios saved_term;
 
 int win_rows, win_cols;
 
 #define MAX_PANELS 11
-
-int num_panels;
-
-typedef struct {
-	int top, left;
-	int rows, cols;
-	string *left_rows, *right_rows;
-	int cur_row;
-} panel;
 panel panels[MAX_PANELS];
+int num_panels, active_panel;
 
 void term_setup() {
 	printf(ALT_BUFF_EN);
@@ -35,10 +32,11 @@ void term_setup() {
 	term.c_lflag &= ~ECHO;
 	term.c_lflag &= ~ICANON;
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+	term_initialized = 1;
 }
 
 void draw_panel(panel *p) {
-	fprintf(trace, "top: %d, left: %d, rows: %d, cols: %d\n",
+	TRACE("top: %d, left: %d, rows: %d, cols: %d\n",
 		p->top, p->left, p->rows, p->cols);
 	for (int n = 0; n < p->rows; n++) {
 		string row = p->left_rows[n];
@@ -72,7 +70,7 @@ void on_resize() {
 	int panel_cols = win_cols / num_panels;
 	int rem = win_cols - panel_cols * num_panels;
 
-	fprintf(trace, "panel_cols: %d\n", panel_cols);
+	TRACE("panel_cols: %d\n", panel_cols);
 
 	for (int i = 0, col = 0; i < num_panels; col += panels[i].cols, i++) {
 		panel *p = &panels[i];
@@ -117,10 +115,15 @@ void on_term(int i) {
 }
 
 void fin() {
-	tcsetattr(STDIN_FILENO, 0, &saved_term);
-	printf(CURS_SHOW);
-	printf(ALT_BUFF_DIS);
-	fclose(trace);
+	if (term_initialized) {
+		tcsetattr(STDIN_FILENO, 0, &saved_term);
+		printf(CURS_SHOW);
+		printf(ALT_BUFF_DIS);
+	}
+#ifdef DEBUG
+	if (trace)
+		fclose(trace);
+#endif
 }
 
 #define READ_BUF_SIZE 4
@@ -151,17 +154,43 @@ void loop() {
 	}
 }
 
-int main() {
+int main(int argc, char **argv) {
+	if (argc != 2) {
+		fprintf(stderr, "Usage: %s <JSON input file>\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
   	if(!isatty(STDIN_FILENO)){
       fprintf(stderr, "Not a terminal.\n");
       exit(EXIT_FAILURE);
     }
-	trace = fopen("trace.txt", "w");
+
 	atexit(fin);
 	signal(SIGINT, on_term);
 	signal(SIGTERM, on_term);
-	signal(SIGWINCH, on_resize);
+
+#ifdef DEBUG
+	trace = fopen("trace.txt", "w");
+#endif
+
+	FILE *f = fopen(argv[1], "r");
+	if (!f) {
+		fprintf(stderr, "Error reading input file.");
+		exit(EXIT_FAILURE);
+	}
+    parse_result pr = parse_json(f);
+	fclose(f);
+    if (!pr.success) {
+		print_error(stderr, pr);
+		exit(EXIT_FAILURE);
+    }
+	json_value top = pr.res;
+
 	term_setup();
+	signal(SIGWINCH, on_resize);
 	on_resize();
+
+	display_json(&panels[0], top);
+
 	loop();
 }
