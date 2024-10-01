@@ -51,6 +51,7 @@ void term_setup() {
 
     printf(ALT_BUF_EN);
     printf(CURS_HIDE);
+    printf(TRACKING_EN);
     struct termios term;
     tcgetattr(STDIN_FILENO, &term);
     saved_term = term;
@@ -309,12 +310,17 @@ int print_row(buffer *dest, const char* key, int index, json_value value,
     return used_cols;
 }
 
+int get_row_off(pane *p, int index) {
+    int scroll_lim = p->nrows / 2 + 1;
+    int off = index <= scroll_lim ? 0 : index - scroll_lim;
+    return off;
+}
+
 void populate_view(pane *p, json_pos pos, int is_top) {
     json_value value = pos.value;
     int index = pos.index;
-    int scroll_lim = p->nrows / 2 + 1;
-    int off = index <= scroll_lim ? 0 : index - scroll_lim;
-    int curs_ri = min(index, scroll_lim);
+    int off = get_row_off(p, index);
+    int curs_ri = -off + index;
     switch (pos.value.kind) {
         case OBJECT:
             if (object_size(value.object) == 0) {
@@ -460,10 +466,56 @@ void move_to_next(int off) {
     }
 }
 
+void handle_mouse_press(int x, int y) {
+    TRACE("Mouse %d, %d\n", x, y);
+    // find which pane was clicked
+    int num_view_panes = min(stack.size, NUM_VIEW_PANES);
+    int pi = -1;
+    for (int i = 0; i < num_view_panes; i++) {
+        pane *p = &window.view_panes[i];
+        TRACE("Pane x=[%d, %d), y=[%d, %d)\n", p->left, p->left + p->ncols, p->top, p->top + p->nrows);
+        if (p->left <= x && x < p->left + p->ncols &&
+            p->top <= y && y < p->top + p->nrows) {
+            TRACE("Pane %d clicked\n", i);
+            pi = i;
+            break;
+        }
+    }
+    if (pi == -1)
+        return;
+
+    int ri = y - window.view_panes[pi].top;
+    int si = num_view_panes - 1 - pi;
+
+    json_pos *pos = stack_peekn(&stack, si);
+    json_value val = pos->value;
+    int tot_rows = 0;
+    if (val.kind == OBJECT)
+        tot_rows = object_size(val.object);
+    else if (val.kind == ARRAY)
+        tot_rows = array_size(val.array);
+    if (ri >= tot_rows)
+        return;
+
+    if (si == 0)
+        move_to_child();
+
+    for (int i = 0; i < si - 1; i++)
+        stack_pop(&stack);
+
+    stack_pop(&stack);
+    int off = get_row_off(&window.view_panes[pi], pos->index);
+    stack_peek(&stack)->index = off + ri;
+    move_to_child();
+
+    for (int i = 0; i < si - 2; i++)
+        move_to_child();
+}
+
 void loop() {
     while (1) {
-        char in[5];
-        int num_read = read(STDIN_FILENO, &in, 5);
+        char in[6];
+        int num_read = read(STDIN_FILENO, &in, 6);
         switch (in[0]) {
             case '\x1b':
                 if (num_read == 1) // ESC key
@@ -500,6 +552,16 @@ void loop() {
                                 draw();
                             }
                             break;
+                        case 'M': {
+                            char b = in[3] - 32;
+                            char Cx = in[4] - 32, Cy = in[5] - 32;
+                            if (b == 0) { // Left button
+                                handle_mouse_press(Cx - 1, Cy - 1);
+                                pane_resize();
+                                draw();
+                            }
+                            break;
+                        }
                     }
                 }
                 break;
@@ -537,6 +599,7 @@ void fin() {
         tcsetattr(STDIN_FILENO, 0, &saved_term);
         printf(CURS_SHOW);
         printf(ALT_BUF_DIS);
+        printf(TRACKING_DIS);
     }
 #ifdef DEBUG
     if (trace)

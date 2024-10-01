@@ -16,6 +16,8 @@
 #define CURS_HIDE       CSI "?25l"
 #define ALT_BUF_EN      CSI "?1049h"
 #define ALT_BUF_DIS     CSI "?1049l"
+#define TRACKING_EN     CSI "?9h"
+#define TRACKING_DIS    CSI "?9l"
 
 #define SGR(n)          CSI n "m"
 #define FMT_RESET       SGR("0")
