@@ -216,7 +216,7 @@ static json_array parse_elements(parse_state *ps) {
     array_append(&res, parse_element(ps));
     while (consume(ps, ','))
         array_append(&res, parse_element(ps));
-    array_compact(&res);
+    //array_compact(&res);
     return res;
 }
 
@@ -238,7 +238,7 @@ static char *parse_string(parse_state *ps) {
 
 static char *parse_characters(parse_state *ps) {
     trace(ps, "characters");
-    int str_size = 8;
+    int str_size = 16;
     char *res = malloc(str_size * sizeof(char));
     int i;
     for (i = 0; !peek(ps, '\"'); i++) {
@@ -250,7 +250,7 @@ static char *parse_characters(parse_state *ps) {
         }
     }
     res[i] = '\0';
-    res = realloc(res, i * sizeof(char) + 1);
+    //res = realloc(res, i * sizeof(char) + 1);
     return res;
 }
 
