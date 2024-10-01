@@ -50,6 +50,8 @@ json_stack stack;
 int searching;
 char search_str[256];
 
+#define INT_ROUND_THRES 1e-6
+
 void term_setup() {
     // necessary for proper wcwidth() support
     setlocale(LC_ALL, "");
@@ -264,7 +266,10 @@ int summarize_value(buffer *dest, json_value value, int cols) {
         case STRING:
             return print_cols(dest, value.string, cols, 1).cols;
         case NUMBER:
-            return string_nprintf(dest, cols + 1, "%f", value.number);
+            if ((value.number - (int)value.number) < INT_ROUND_THRES)
+                return string_nprintf(dest, cols + 1, "%d", (int)value.number);
+            else
+                return string_nprintf(dest, cols + 1, "%f", value.number);
         case TRUE:
             return string_nprintf(dest, cols + 1, "true");
         case FALSE:
