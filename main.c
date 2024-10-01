@@ -310,7 +310,20 @@ int print_row(buffer *dest, const char* key, int index, json_value value,
     return used_cols;
 }
 
-int get_row_off(pane *p, int index) {
+int get_num_items(json_value value) {
+    switch (value.kind) {
+        case OBJECT:
+            return object_size(value.object);
+        case ARRAY:
+            return array_size(value.array);
+        default:
+            return 1;
+    }
+}
+
+int get_row_off(pane *p, int num_items, int index) {
+    if (num_items <= p->nrows)
+        return 0;
     int scroll_lim = p->nrows / 2 + 1;
     int off = index <= scroll_lim ? 0 : index - scroll_lim;
     return off;
@@ -319,19 +332,15 @@ int get_row_off(pane *p, int index) {
 void populate_view(pane *p, json_pos pos, int is_top) {
     json_value value = pos.value;
     int index = pos.index;
-    int off = get_row_off(p, index);
+    int off = get_row_off(p, get_num_items(value), index);
     int curs_ri = -off + index;
-    switch (pos.value.kind) {
+    switch (value.kind) {
         case OBJECT:
             if (object_size(value.object) == 0) {
                 assert(is_top);
                 string_nprintf(&p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty object>" FMT_RESET);
                 break;
-            }
-            if (object_size(value.object) <= p->nrows) {
-                off = 0;
-                curs_ri = index;
             }
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
@@ -347,10 +356,6 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                 string_nprintf(&p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty array>" FMT_RESET);
                 break;
-            }
-            if (array_size(value.object) <= p->nrows) {
-                off = 0;
-                curs_ri = index;
             }
             for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.array);
@@ -487,6 +492,8 @@ void handle_mouse_press(int x, int y) {
     int ri = y - window.view_panes[pi].top;
     int si = num_view_panes - 1 - pi;
 
+    TRACE("ri = %d, si = %d\n", ri, si);
+
     json_pos *pos = stack_peekn(&stack, si);
     json_value val = pos->value;
     int tot_rows = 0;
@@ -504,7 +511,9 @@ void handle_mouse_press(int x, int y) {
         stack_pop(&stack);
 
     stack_pop(&stack);
-    int off = get_row_off(&window.view_panes[pi], pos->index);
+    int num_items = get_num_items(stack_peek(&stack)->value);
+    int off = get_row_off(&window.view_panes[pi], num_items, pos->index);
+    TRACE("off = %d\n", off);
     stack_peek(&stack)->index = off + ri;
     move_to_child();
 
