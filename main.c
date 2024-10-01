@@ -21,11 +21,10 @@ FILE *input;
 int term_initialized;
 struct termios saved_term;
 
-#define MAX_FORMAT_LEN 32
 typedef struct {
     int top, left;
     int nrows, ncols;
-    char **rows;
+    buffer *rows;
 } pane;
 
 #define NUM_VIEW_PANES 3
@@ -64,6 +63,12 @@ static void *recalloc(void *ptr, size_t elts, size_t size) {
     return ptr;
 }
 
+static void rowalloc(buffer *dest, int cols) {
+    // up to 4 bytes per (unicode) character + 32 formatting characters
+    unsigned capacity = 4 * cols + 32 + 1;
+    buffer_realloc(dest, capacity);
+}
+
 void pane_resize() {
     struct winsize wsize;
     ioctl(STDIN_FILENO, TIOCGWINSZ, &wsize);
@@ -81,9 +86,8 @@ void pane_resize() {
     tb->left = 0;
     tb->nrows = 1;
     tb->ncols = window.ncols;
-    tb->rows = recalloc(tb->rows, sizeof(char *), 1);
-    tb->rows[0] = realloc(tb->rows[0],
-        (tb->ncols + MAX_FORMAT_LEN + 1) * sizeof(char));
+    tb->rows = recalloc(tb->rows, 1, sizeof(buffer));
+    rowalloc(&tb->rows[0], tb->ncols);
 
     // status bar
     pane *sb = &window.status_bar;
@@ -91,9 +95,8 @@ void pane_resize() {
     sb->left = 0;
     sb->nrows = 1;
     sb->ncols = window.ncols;
-    sb->rows = recalloc(sb->rows, sizeof(char *), 1);
-    sb->rows[0] = realloc(sb->rows[0],
-        (sb->ncols + MAX_FORMAT_LEN + 1) * sizeof(char));
+    sb->rows = recalloc(sb->rows, 1, sizeof(buffer));
+    rowalloc(&sb->rows[0], sb->ncols);
 
     for (int i = 0, col = 0; i < NUM_VIEW_PANES;
          col += pane_cols + (i < rem), i++) {
@@ -102,83 +105,142 @@ void pane_resize() {
         p->left = col;
         p->nrows = window.nrows - 4;
         p->ncols = pane_cols + (i < rem) - 1;
-        p->rows = recalloc(p->rows, p->nrows, sizeof(char *));
+        p->rows = recalloc(p->rows, p->nrows, sizeof(buffer));
         for (int j = 0; j < p->nrows; j++)
-            p->rows[j] = realloc(p->rows[j],
-                (p->ncols + MAX_FORMAT_LEN + 1) * sizeof(char));
+            rowalloc(&p->rows[j], p->ncols);
     }
 }
 
-void print_cur_pos(char *s, int cols) {
-    s += sprintf(s, FMT_BOLD);
-    for (int i = 0; i < stack.size - 1; i++) {
+// returns the number of columns expected to be occupied
+int print_cols(buffer *dest, const char *src, int num_cols, int escape) {
+    assert (dest->raw_size >= 1 && dest->data[dest->raw_size - 1] == '\0');
+    dest->raw_size--;
+
+    int cols = 0;
+    for (int i = 0; src[i] != '\0' && cols < num_cols; ) {
+        unsigned char c = src[i];
+        if (escape && c == '\n') {
+            buffer_putchar(dest, '\\');
+            buffer_putchar(dest, 'n');
+            i++;
+            cols += 2;
+        }
+        else if (escape && c == '\r') {
+            buffer_putchar(dest, '\\');
+            buffer_putchar(dest, 'r');
+            i++;
+            cols += 2;
+        }
+        else if (escape && c == '\t') {
+            buffer_putchar(dest, '\\');
+            buffer_putchar(dest, 't');
+            i++;
+            cols += 2;
+        }
+        else if (c == '\n') {
+            break;
+        }
+        else if (c <= 0x7f) {
+            buffer_putchar(dest, src[i++]);
+            cols++;
+        }
+        // UTF-8
+        else if (c < 0xe0) {
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            cols++;
+        }
+        else if (c < 0xf0) {
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            cols++;
+        }
+        else {
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            buffer_putchar(dest, src[i++]);
+            cols++;
+        }
+    }
+    buffer_putchar(dest, '\0');
+    return cols;
+}
+
+void print_cur_pos(buffer *dest, int cols) {
+    string_nprintf(dest, 0, FMT_BOLD);
+    for (int i = 0; i < stack.size - 1 && cols > 0; i++) {
         json_value value = stack.data[i].value;
         int index = stack.data[i].index;
         switch (value.kind) {
-            case OBJECT:
-                s += snprintf(s, cols, ".%s",
-                    object_get(value.object, index).key);
+            case OBJECT: {
+                const char* key = object_get(value.object, index).key;
+                cols -= string_nprintf(dest, cols + 1, "%c", '.');
+                cols -= print_cols(dest, key, cols, 1);
                 break;
+            }
             case ARRAY:
-                s += snprintf(s, cols, "[%d]", index);
+                cols -= string_nprintf(dest, cols + 1, "[%d]", index);
                 break;
             default:
                 assert(0);
         }
     }
-    sprintf(s, FMT_RESET);
+    string_nprintf(dest, 0, FMT_RESET);
 }
 
-unsigned summarize_value(char *s, json_value value, int cols) {
+int summarize_value(buffer *dest, json_value value, int cols) {
     switch (value.kind) {
         case OBJECT:
-            return snprintf(s, cols + 1,
+            return string_nprintf(dest, cols + 1,
                 object_size(value.object) > 0 ? "{..}" : "{}");
         case ARRAY:
-            return snprintf(s, cols + 1,
+            return string_nprintf(dest, cols + 1,
                 array_size(value.array) > 0 ? "[..]" : "[]");
         case STRING:
-            // FIXME: handle newlines
-            return snprintf(s, cols + 1, "%s", value.string);
+            return print_cols(dest, value.string, cols, 1);
         case NUMBER:
-            return snprintf(s, cols + 1, "%f", value.number);
+            return string_nprintf(dest, cols + 1, "%f", value.number);
         case TRUE:
-            return snprintf(s, cols + 1, "true");
+            return string_nprintf(dest, cols + 1, "true");
         case FALSE:
-            return snprintf(s, cols + 1, "false");
+            return string_nprintf(dest, cols + 1, "false");
         case NUL:
-            return snprintf(s, cols + 1, "null");
+            return string_nprintf(dest, cols + 1, "null");
     }
 }
 
 // prints an element when key == "", a member otherwise
-void print_row(char *s, const char* key, int index, json_value value,
+void print_row(buffer *dest, const char* key, int index, json_value value,
                int cols, int selected) {
     if (selected)
-        s += sprintf(s, FMT_BG_RED FMT_FG_WHITE FMT_BOLD);
+        string_nprintf(dest, 0, FMT_BG_RED FMT_FG_WHITE FMT_BOLD);
     else
-        s += sprintf(s, FMT_BG_BLACK FMT_FG_WHITE FMT_BOLD);
+        string_nprintf(dest, 0, FMT_BG_BLACK FMT_FG_WHITE FMT_BOLD);
 
-    // FIXME: this won't handle unicode characters consuming more bytes!
-    int cur_col = 0;
     if (strlen(key) == 0)
-        cur_col += snprintf(s, cols + 1, "%d  ", index);
-    else
-        cur_col += snprintf(s, cols + 1, "%s  ", key);
-    cur_col = min(cur_col, cols);
-    assert(s[cur_col] == '\0');
+        cols -= string_nprintf(dest, cols + 1, "%d  ", index);
+    else {
+        cols -= print_cols(dest, key, cols, 1);
+        cols -= string_nprintf(dest, cols + 1, "  ");
+    }
+    assert(dest->data[dest->raw_size - 1] == '\0');
 
-    s += sprintf(s + cur_col, FMT_NOBOLD);
+    string_nprintf(dest, 0, FMT_NOBOLD);
 
-    if (cur_col < cols)
-        cur_col += summarize_value(s + cur_col, value, cols - cur_col);
-    cur_col = min(cur_col, cols);
-    assert(s[cur_col] == '\0');
+    if (cols > 0)
+        cols -= summarize_value(dest, value, cols);
+    assert(dest->data[dest->raw_size - 1] == '\0');
 
-    for (; cur_col < cols; cur_col++)
-        s[cur_col] = ' ';
+    if (cols > 0) {
+        dest->raw_size--;
+        for (; cols > 0; cols--)
+            buffer_putchar(dest, ' ');
+        buffer_putchar(dest, '\0');
+    }
 
-    sprintf(s + cols, FMT_RESET);
+    string_nprintf(dest, 0, FMT_RESET);
 }
 
 void populate_view(pane *p, json_pos pos, int is_top) {
@@ -191,7 +253,7 @@ void populate_view(pane *p, json_pos pos, int is_top) {
         case OBJECT:
             if (object_size(value.object) == 0) {
                 assert(is_top);
-                snprintf(p->rows[0], p->ncols + 1 + 8,
+                string_nprintf(&p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty object>" FMT_RESET);
                 break;
             }
@@ -199,14 +261,14 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
                 json_member memb = object_get(value.object, di);
-                print_row(p->rows[ri], memb.key, di, memb.val, p->ncols,
+                print_row(&p->rows[ri], memb.key, di, memb.val, p->ncols,
                           !is_top && ri == curs_ri);
             }
             break;
         case ARRAY:
             if (array_size(value.array) == 0) {
                 assert(is_top);
-                snprintf(p->rows[0], p->ncols + 1 + 8,
+                string_nprintf(&p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty array>" FMT_RESET);
                 break;
             }
@@ -214,7 +276,7 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                  ri < p->nrows && di < array_size(value.array);
                  ri++, di++) {
                 json_value elt = array_get(value.array, di);
-                print_row(p->rows[ri], "", di, elt, p->ncols,
+                print_row(&p->rows[ri], "", di, elt, p->ncols,
                           !is_top && ri == curs_ri);
             }
             break;
@@ -224,12 +286,12 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             for (int ri = 0, si = 0; ri < p->nrows && si < strLen;
                  ri++, si += p->ncols) {
                 // FIXME: handle newlines
-                snprintf(p->rows[ri], p->ncols + 1, "%s", s + si);
+                print_cols(&p->rows[ri], s + si, p->ncols, 0);
             }
             break;
         }
         default:
-            summarize_value(p->rows[0], value, p->ncols + 1);
+            summarize_value(&p->rows[0], value, p->ncols + 1);
     }
 }
 
@@ -237,25 +299,25 @@ void draw_pane(pane *p) {
     TRACE("top: %d, left: %d, nrows: %d, ncols: %d\n",
         p->top, p->left, p->nrows, p->ncols);
     for (int n = 0; n < p->nrows; n++) {
-        const char *row = p->rows[n];
-        if (strlen(row) > 0) {
+        if (p->rows[n].raw_size > 1) {
             printf(CUP("%d", "%d"), p->top + n + 1, p->left + 1);
-            printf("%s", row);
+            printf("%s", p->rows[n].data);
         }
     }
 }
 
 void draw() {
     // clear existing data
-    window.top_bar.rows[0][0] = '\0';
+    string_clear(&window.top_bar.rows[0]);
+    string_clear(&window.status_bar.rows[0]);
     for (int i = 0; i < NUM_VIEW_PANES; i++)
         for (int ri = 0; ri < window.view_panes[i].nrows; ri++)
-            window.view_panes[i].rows[ri][0] = '\0';
+            string_clear(&window.view_panes[i].rows[ri]);
 
     // fill each pane with corresponding data
-    snprintf(window.status_bar.rows[0], window.status_bar.ncols, "%s",
-        input_filename);
-    print_cur_pos(window.top_bar.rows[0], window.top_bar.ncols);
+    string_nprintf(&window.status_bar.rows[0], window.status_bar.ncols + 1,
+        "%s", input_filename);
+    print_cur_pos(&window.top_bar.rows[0], window.top_bar.ncols);
     assert(stack.size >= 1);
     int num_view_panes = min(stack.size, NUM_VIEW_PANES);
     for (int i = num_view_panes - 1, si = 0; i >= 0; i--, si++) {

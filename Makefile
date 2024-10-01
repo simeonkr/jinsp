@@ -1,7 +1,7 @@
 CC = clang
-CFLAGS = -std=c99 -Wall -O0 -gdwarf-4 -DDEBUG
+CFLAGS = -std=c99 -Wall -O0 -gdwarf-4
 OPT = /usr/lib/llvm-14/bin/opt
-OBJFILES = buffer.o str.o json.o parse.o print.o
+OBJFILES = buffer.o json.o parse.o print.o
 
 main: main.o $(OBJFILES)
 	$(CC) $(CFLAGS) $^ -o $@

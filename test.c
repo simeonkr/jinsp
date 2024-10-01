@@ -3,7 +3,6 @@
 #include "json.h"
 #include "parse.h"
 #include "print.h"
-#include "str.h"
 #include "stack.h"
 
 #ifdef DEBUG
@@ -31,30 +30,42 @@ void data_struct_test() {
             (json_member){"elements", mk_array_value(array)});
     print_json(mk_object_value(object));
 
-    string s = mk_empty_string();
-    assert(strncmp(s.data, "", s.size) == 0);
-    string_free(&s);
+    buffer s = mk_string(16);
+    assert(strncmp(s.data, "", s.raw_size) == 0);
+    buffer_free(&s);
 
-    s = mk_string("Hello world!\n");
-    assert(strncmp(s.data, "Hello world!\n", s.size) == 0);
-    string_free(&s);
-    assert(strncmp(s.data, "", s.size) == 0);
+    s = mk_string(16);
+    string_nprintf(&s, 0, "Hello world!\n");
+    assert(s.raw_size == 14 && s.capacity == 32);
+    assert(strncmp(s.data, "Hello world!\n", s.raw_size) == 0);
+    string_clear(&s);
+    assert(strncmp(s.data, "", s.raw_size) == 0);
+    buffer_free(&s);
 
-    s = mk_string("Hello world!\n");
-    string_printf(&s, "Hello");
-    assert(strncmp(s.data, "Hello", s.size) == 0);
-    string_printfa(&s, " world!\n");
-    assert(strncmp(s.data, "Hello world!\n", s.size) == 0);
-    string_printfa(&s, "Bye bye world!");
-    string_printfa(&s, "%d", 10);
-    assert(strncmp(s.data, "Hello world!\nBye bye world!10", s.size) == 0);
-    string_printf(&s, "%s=%d\n", "two", 2);
-    assert(strncmp(s.data, "two=2\n", s.size) == 0);
-    string_free(&s);
-    s = mk_empty_string();
+    s = mk_string(16);
+    string_nprintf(&s, 0, "Hello");
+    string_nprintf(&s, 0, " world");
+    s.raw_size--;
+    buffer_putchar(&s, '!');
+    buffer_putchar(&s, '\n');
+    buffer_putchar(&s, '\0');
+    assert(strncmp(s.data, "Hello world!\n", s.raw_size) == 0);
+    assert(s.raw_size == 14 && s.capacity == 32);
+    string_nprintf(&s, 0, "Bye bye world!");
+    string_nprintf(&s, 0, "%d", 10);
+    assert(strncmp(s.data, "Hello world!\nBye bye world!10", s.raw_size) == 0);
+    buffer_free(&s);
+
+    s = mk_string(16);
     const char *long_str = "Long string...............................";
-    string_printf(&s, "%s", long_str);
-    assert(strncmp(s.data, long_str, s.size) == 0);
+    string_nprintf(&s, 0, "%s", long_str);
+    assert(strncmp(s.data, long_str, s.raw_size) == 0);
+    buffer_free(&s);
+
+    s = mk_string(16);
+    string_nprintf(&s, 11, "%s", long_str);
+    assert(strncmp(s.data, "Long strin", s.raw_size) == 0);
+    buffer_free(&s);
 
     json_stack stack;
     stack.size = 0;

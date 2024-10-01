@@ -64,7 +64,7 @@ static inline json_value mk_null_value() {
 void value_free(json_value value);
 
 static inline json_object mk_object() {
-    return mk_buffer();
+    return mk_buffer(64);
 }
 
 static inline unsigned object_size(json_object object) {
@@ -82,7 +82,7 @@ static inline void object_append(json_object *object, json_member keyval) {
 void object_free(json_object object);
 
 static inline json_array mk_array() {
-    return mk_buffer();
+    return mk_buffer(64);
 };
 
 static inline unsigned array_size(json_array array) {

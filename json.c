@@ -22,12 +22,12 @@ void object_free(json_object object) {
         free(keyval.key);
         value_free(keyval.val);
     }
-    buffer_free(object);
+    buffer_free(&object);
 }
 
 void array_free(json_array array) {
     for (int i = 0; i < array_size(array); i++) {
         value_free(array_get(array, i));
     }
-    buffer_free(array);
+    buffer_free(&array);
 }
