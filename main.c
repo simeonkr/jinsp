@@ -230,12 +230,16 @@ void move_to_child() {
     switch (cur->value.kind) {
         json_value next;
         case OBJECT:
-            next = object_get(cur->value.object, cur->index).val;
-            stack_push(&stack, (json_pos){ next, 0 });
+            if (object_size(cur->value.object) > 0) {
+                next = object_get(cur->value.object, cur->index).val;
+                stack_push(&stack, (json_pos){ next, 0 });
+            }
             break;
         case ARRAY:
-            next = array_get(cur->value.object, cur->index);
-            stack_push(&stack, (json_pos){ next, 0 });
+            if (array_size(cur->value.array) > 0) {
+                next = array_get(cur->value.object, cur->index);
+                stack_push(&stack, (json_pos){ next, 0 });
+            }
             break;
         default:
             break;
