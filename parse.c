@@ -258,7 +258,7 @@ static char parse_character(parse_state *ps) {
     trace(ps, "character");
     if (peek(ps, '\\'))
         return parse_escape(ps);
-    else if (peek(ps, '\"')) {
+    else if (peek(ps, '\"') || ps->tok < 0x20) {
         error(ps);
         return '\0';
     }
