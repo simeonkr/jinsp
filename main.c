@@ -45,6 +45,8 @@ struct {
 
 json_stack stack;
 
+char search_str[256];
+
 void term_setup() {
     // necessary for proper wcwidth() support
     setlocale(LC_ALL, "");
@@ -577,6 +579,15 @@ void loop() {
                 move_to_child();
                 draw();
                 break;
+            case 'n': {
+                json_stack search_stack = stack;
+                search(&search_stack, search_str);
+                if (search_stack.size > 0)
+                    stack = search_stack;
+                pane_resize();
+                draw();
+                break;
+            }
             case 'q':
                 return;
         }
