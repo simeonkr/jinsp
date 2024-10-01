@@ -59,17 +59,20 @@ static void recover(parse_state *ps, const char *valid_toks) {
 
 static inline void trace(parse_state *ps, const char *msg) {
 #ifdef DEBUG
-    for (int i = 0; i < ps->consumed; i++)
-        putchar('.');
+    printf("%5d,%3d ", ps->line, ps->col);
     char c = cur(ps);
     if (c == '\n')
-        printf("\\n (%s)\n", msg);
+        printf("\\n %16s\n", msg);
+    else if (c == '\n')
+        printf("\\r %16s\r", msg);
+    else if (c == '\n')
+        printf("\\t %16s\t", msg);
     else
-        printf("%c (%s)\n", c, msg);
+        printf("%2c %16s\n", c, msg);
 #endif
 }
 
-static int peek(parse_state *ps, char tok) {
+static inline int peek(parse_state *ps, char tok) {
     return ps->tok == tok;
 }
 
@@ -83,7 +86,7 @@ static int peek_anyof(parse_state *ps, char *tok_set) {
 
 static int consume(parse_state *ps, char tok) {
     if (peek(ps, tok)) {
-        trace(ps, "consume");
+        trace(ps, "");
         advance(ps);
         return 1;
     }
@@ -93,7 +96,7 @@ static int consume(parse_state *ps, char tok) {
 static char consume_anyof(parse_state *ps, char *tok_set) {
     char c;
     if ((c = peek_anyof(ps, tok_set))) {
-        trace(ps, "consume");
+        trace(ps, "");
         advance(ps);
         return c;
     }
@@ -109,7 +112,7 @@ static int parse_char(parse_state *ps, char tok) {
 }
 
 static int parse_anyof(parse_state *ps, char *tok_str) {
-    trace(ps, "anyof");
+    trace(ps, "char");
     char c;
     if ((c = consume_anyof(ps, tok_str)))
         return c;
@@ -282,7 +285,7 @@ static char parse_character(parse_state *ps) {
     }
     else {
         char c = cur(ps);
-        advance(ps);
+        consume(ps, c);
         return c;
     }
 }

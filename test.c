@@ -3,8 +3,11 @@
 #include "parse.h"
 #include "print.h"
 
-int main() {
-    FILE *f = fopen("examples/simple.json", "r");
+void round_trip_test(FILE *f) {
     json_value j = parse(f);
     print(j);
+}
+
+int main() {
+    round_trip_test(stdin);
 }
