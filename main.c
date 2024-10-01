@@ -60,14 +60,6 @@ void term_setup() {
     term_initialized = 1;
 }
 
-static void *recalloc(void *ptr, size_t elts, size_t size) {
-    if (!ptr)
-        ptr = calloc(elts, size);
-    else
-        ptr = realloc(ptr, elts * size);
-    return ptr;
-}
-
 static void rowalloc(buffer *dest, int cols) {
     // up to 4 bytes per (unicode) character + 32 formatting characters
     unsigned capacity = 4 * cols + 32 + 1;
@@ -91,7 +83,8 @@ void pane_resize() {
     tb->left = 0;
     tb->nrows = 1;
     tb->ncols = window.ncols;
-    tb->rows = recalloc(tb->rows, 1, sizeof(buffer));
+    free(tb->rows);
+    tb->rows = calloc(1, sizeof(buffer));
     rowalloc(&tb->rows[0], tb->ncols);
 
     // status bar
@@ -100,7 +93,8 @@ void pane_resize() {
     sb->left = 0;
     sb->nrows = 1;
     sb->ncols = window.ncols;
-    sb->rows = recalloc(sb->rows, 1, sizeof(buffer));
+    free(sb->rows);
+    sb->rows = calloc(1, sizeof(buffer));
     rowalloc(&sb->rows[0], sb->ncols);
 
     for (int i = 0, col = 0; i < NUM_VIEW_PANES;
@@ -110,7 +104,8 @@ void pane_resize() {
         p->left = col;
         p->nrows = window.nrows - 4;
         p->ncols = pane_cols + (i < rem) - 1;
-        p->rows = recalloc(p->rows, p->nrows, sizeof(buffer));
+        free(p->rows);
+        p->rows = calloc(p->nrows, sizeof(buffer));
         for (int j = 0; j < p->nrows; j++)
             rowalloc(&p->rows[j], p->ncols);
     }
@@ -480,6 +475,7 @@ void on_term(int i) {
 void on_resize() {
     pane_resize();
     draw();
+    signal(SIGWINCH, on_resize);
 }
 
 void fin() {
@@ -509,6 +505,7 @@ int main(int argc, char **argv) {
     }
 
     atexit(fin);
+    // TODO: use sigaction for all signal handling
     signal(SIGINT, on_term);
     signal(SIGTERM, on_term);
 #ifndef DEBUG
