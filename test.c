@@ -45,14 +45,15 @@ void data_struct_test() {
     assert(strncmp(s.data, "Hello", s.size) == 0);
     string_printfa(&s, " world!\n");
     assert(strncmp(s.data, "Hello world!\n", s.size) == 0);
-    string_printfa(&s, "Bye bye world!\n");
-    assert(strncmp(s.data, "Hello world!\nBye bye world!\n", s.size) == 0);
+    string_printfa(&s, "Bye bye world!");
+    string_printfa(&s, "%d", 10);
+    assert(strncmp(s.data, "Hello world!\nBye bye world!10", s.size) == 0);
     string_printf(&s, "%s=%d\n", "two", 2);
     assert(strncmp(s.data, "two=2\n", s.size) == 0);
     string_free(&s);
     s = mk_empty_string();
     const char *long_str = "Long string...............................";
-    string_printf(&s, "%s", long_str, 2);
+    string_printf(&s, "%s", long_str);
     assert(strncmp(s.data, long_str, s.size) == 0);
 
     json_stack stack;

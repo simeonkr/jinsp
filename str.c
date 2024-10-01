@@ -19,7 +19,8 @@ static void string_vprintfa(string *s, const char *fmt, va_list args) {
         vsnprintf(&s->data[s->size], s->capacity - s->size, fmt, args);
     int retry = new_size + 1 > s->capacity;
     if ((new_size + 1) * 2 >= s->capacity) {
-        s->capacity = (new_size + 1) * 2;
+        while ((new_size + 1) * 2 >= s->capacity)
+            s->capacity *= 2;
         s->data = (char *)realloc(s->data, s->capacity * sizeof(char));
     }
     if (retry) {
