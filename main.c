@@ -80,10 +80,10 @@ void pane_resize() {
     window.nrows = wsize.ws_row;
     window.ncols = wsize.ws_col;
 
+    TRACE("nrows: %d, ncols: %d\n", window.nrows, window.ncols);
+
     int pane_cols = window.ncols / NUM_VIEW_PANES;
     int rem = window.ncols - pane_cols * NUM_VIEW_PANES;
-
-    TRACE("pane_cols: %d\n", pane_cols);
 
     // top bar
     pane *tb = &window.top_bar;
@@ -325,8 +325,6 @@ void populate_view(pane *p, json_pos pos, int is_top) {
 }
 
 void draw_pane(pane *p) {
-    TRACE("top: %d, left: %d, nrows: %d, ncols: %d\n",
-        p->top, p->left, p->nrows, p->ncols);
     for (int n = 0; n < p->nrows; n++) {
         if (p->rows[n].raw_size > 1) {
             printf(CUP("%d", "%d"), p->top + n + 1, p->left + 1);
@@ -361,13 +359,11 @@ void draw() {
 }
 
 void move_to_parent() {
-    TRACE("move_to_parent: stack.size = %d\n", stack.size);
     if (stack.size > 2)
         stack_pop(&stack);
 }
 
 void move_to_child() {
-    TRACE("move_to_child: stack.size = %d\n", stack.size);
     json_pos *cur = stack_peek(&stack);
     switch (cur->value.kind) {
         json_value next;
@@ -389,7 +385,6 @@ void move_to_child() {
 }
 
 void move_to_prev(int off) {
-    TRACE("move_to_prev: stack.size = %d\n", stack.size);
     if (stack.size > 1) {
         stack_pop(&stack);
         json_pos *cur = stack_peek(&stack);
@@ -403,14 +398,11 @@ void move_to_next(int off) {
         stack_pop(&stack);
         json_pos *cur = stack_peek(&stack);
         int max_idx = 0;
-        TRACE("cur->value.kind: %d\n", cur->value.kind);
         switch (cur->value.kind) {
             case OBJECT:
                 max_idx = object_size(cur->value.object) - 1;
-                TRACE("object\n");
                 break;
             case ARRAY:
-                TRACE("array\n");
                 max_idx = array_size(cur->value.array) - 1;
                 break;
             default:
@@ -418,8 +410,6 @@ void move_to_next(int off) {
         }
         cur->index = min(cur->index + off, max_idx);
         move_to_child();
-        TRACE("move_to_next: stack.size = %d, idx = %d, max_idx=%d\n",
-            stack.size, cur->index, max_idx);
     }
 }
 
