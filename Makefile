@@ -1,7 +1,7 @@
 CC = clang
 CFLAGS = -std=c99 -Wall -O3 -gdwarf-4
 OPT = /usr/lib/llvm-14/bin/opt
-OBJFILES = json.o parse.o print.o
+OBJFILES = json.o parse.o print.o str.o
 
 main: main.o $(OBJFILES)
 	$(CC) $(CFLAGS) $^ -o $@

@@ -2,7 +2,7 @@
 #include <string.h>
 #include "str.h"
 
-string mk_string() {
+string mk_empty_string() {
     string res;
     res.size = 1;
     res.capacity = 16;
@@ -25,6 +25,12 @@ void string_append(string s, const char *cstr) {
     string res = string_expand(s, strlen(cstr));
     strncpy(&res.data[res.size], cstr, strlen(cstr));
 };
+
+string mk_string(const char *cstr) {
+    string res = mk_empty_string();
+    string_append(res, cstr);
+    return res;
+}
 
 void string_printf(string s, const char *fmt, ...) {
 

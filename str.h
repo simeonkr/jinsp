@@ -5,9 +5,11 @@ typedef struct string {
     char *data;
 } string;
 
-string mk_string();
+string mk_empty_string();
 
-void string_append(string s, char c);
+string mk_string(const char *cstr);
+
+void string_append(string s, const char *cstr);
 
 void string_printf(string s, const char *fmt, ...);
 
