@@ -228,17 +228,17 @@ void move_to_child() {
     }
 }
 
-void move_to_prev() {
+void move_to_prev(int off) {
     TRACE("move_to_prev: stack.size = %d\n", stack.size);
     if (stack.size > 1) {
         stack_pop(&stack);
         json_pos *cur = stack_peek(&stack);
-        cur->index = max(cur->index - 1, 0);
+        cur->index = max(cur->index - off, 0);
         move_to_child();
     }
 }
 
-void move_to_next() {
+void move_to_next(int off) {
     if (stack.size > 1) {
         stack_pop(&stack);
         json_pos *cur = stack_peek(&stack);
@@ -256,7 +256,7 @@ void move_to_next() {
             default:
                 break;
         }
-        cur->index = min(cur->index + 1, max_idx);
+        cur->index = min(cur->index + off, max_idx);
         move_to_child();
         TRACE("move_to_next: stack.size = %d, idx = %d, max_idx=%d\n", 
             stack.size, cur->index, max_idx);
@@ -265,20 +265,20 @@ void move_to_next() {
 
 void loop() {
     while (1) {
-        char in[4];
-        int num_read = read(STDIN_FILENO, &in, 4);
+        char in[5];
+        int num_read = read(STDIN_FILENO, &in, 5);
         switch (in[0]) {
             case '\x1b':
                 if (num_read == 1) // ESC key
                     return;
-                if (num_read == 3 && in[1] == '[') {
+                if (num_read >= 3 && in[1] == '[') {
                     switch (in[2]) {
                         case KEY_UP:
-                            move_to_prev();
+                            move_to_prev(1);
                             draw();
                             break;
                         case KEY_DOWN:
-                            move_to_next();
+                            move_to_next(1);
                             draw();
                             break;
                         case KEY_RIGHT:
@@ -289,8 +289,28 @@ void loop() {
                             move_to_parent();
                             draw();
                             break;
+                        case '5':
+                            if (in[3] == '~') { // PgUp
+                                move_to_prev(window.view_panes[0].nrows);
+                                draw();
+                            }
+                            break;
+                        case '6':
+                            if (in[3] == '~') { // PgDown
+                                move_to_next(window.view_panes[0].nrows);
+                                draw();
+                            }
+                            break;
                     }
                 }
+                break;
+            case '\x7f': // Backspace key
+                move_to_parent();
+                draw();
+                break;
+            case '\x0a': // Enter key
+                move_to_child();
+                draw();
                 break;
             case 'q':
                 return;
