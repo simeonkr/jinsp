@@ -3,7 +3,7 @@
 #include "stdio.h"
 
 #ifdef DEBUG
-FILE *trace;
+extern FILE *trace;
 
 #define TRACE(...) fprintf(trace, __VA_ARGS__)
 

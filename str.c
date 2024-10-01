@@ -1,5 +1,6 @@
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include "str.h"
 
 string mk_empty_string() {
@@ -11,26 +12,40 @@ string mk_empty_string() {
     return s;
 }
 
-void string_append(string *s, const char *cstr) {
-    unsigned new_size = s->size + strlen(cstr);
-    if (new_size * 2 >= s->capacity) {
-        s->capacity = new_size * 2;
-        s->data = (char *)realloc(s->data, new_size * sizeof(char));
-    }
-    strncpy(&s->data[s->size], cstr, strlen(cstr) + 1);
-    s->size = new_size;
-};
-
-string mk_string(const char *cstr) {
+string mk_string(const char *fmt, ...) {
     string s = mk_empty_string();
-    string_append(&s, cstr);
+    va_list args;
+    va_start(args, fmt);
+    string_printf(&s, fmt, args);
+    va_end(args);
     return s;
 }
 
 void string_printf(string *s, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    s->size = 0;
+    string_printfa(s, fmt, args);
+    va_end(args);
+}
 
+void string_printfa(string *s, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int new_size = s->size + snprintf(s->data, s->capacity, fmt, args);
+    va_end(args);
+    if (new_size * 2 >= s->capacity) {
+        s->capacity = new_size * 2;
+        s->data = (char *)realloc(s->data, new_size * sizeof(char));
+    }
+    if (new_size > s->capacity) {
+        snprintf(s->data, s->capacity, fmt, args);
+    }
+    s->size = new_size;
 }
 
 void string_free(string *s) {
     free(s->data);
+    s->capacity = 0;
+    s->size = 0;
 }

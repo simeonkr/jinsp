@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <setjmp.h>
 #include "parse.h"
+#include "trace.h"
 
 typedef struct parse_error parse_error;
 typedef struct parse_state parse_state;
@@ -30,22 +31,23 @@ static void advance(parse_state *ps) {
     ps->consumed++;
 }
 
+// FIXME: this needs to free allocated memory
 static void error(parse_state *ps) {
     longjmp(ps->on_err, 1);
 }
 
-static inline void trace(parse_state *ps, const char *msg) {
+static inline void tracep(parse_state *ps, const char *msg) {
 #ifdef DEBUG
-    printf("%5d,%3d ", ps->line, ps->col);
+    TRACE("%5d,%3d ", ps->line, ps->col);
     char c = cur(ps);
     if (c == '\n')
-        printf("\\n %16s\n", msg);
+        TRACE("\\n %16s\n", msg);
     else if (c == '\n')
-        printf("\\r %16s\r", msg);
+        TRACE("\\r %16s\r", msg);
     else if (c == '\n')
-        printf("\\t %16s\t", msg);
+        TRACE("\\t %16s\t", msg);
     else
-        printf("%2c %16s\n", c, msg);
+        TRACE("%2c %16s\n", c, msg);
 #endif
 }
 
@@ -63,7 +65,7 @@ static int peek_anyof(parse_state *ps, char *tok_set) {
 
 static int consume(parse_state *ps, char tok) {
     if (peek(ps, tok)) {
-        trace(ps, "");
+        tracep(ps, "");
         advance(ps);
         return 1;
     }
@@ -73,7 +75,7 @@ static int consume(parse_state *ps, char tok) {
 static char consume_anyof(parse_state *ps, char *tok_set) {
     char c;
     if ((c = peek_anyof(ps, tok_set))) {
-        trace(ps, "");
+        tracep(ps, "");
         advance(ps);
         return c;
     }
@@ -81,7 +83,7 @@ static char consume_anyof(parse_state *ps, char *tok_set) {
 }
 
 static int parse_char(parse_state *ps, char tok) {
-    trace(ps, "char");
+    tracep(ps, "char");
     if (consume(ps, tok))
         return 1;
     error(ps);
@@ -89,7 +91,7 @@ static int parse_char(parse_state *ps, char tok) {
 }
 
 static int parse_anyof(parse_state *ps, char *tok_str) {
-    trace(ps, "char");
+    tracep(ps, "char");
     char c;
     if ((c = consume_anyof(ps, tok_str)))
         return c;
@@ -100,8 +102,8 @@ static int parse_anyof(parse_state *ps, char *tok_str) {
 static json_value parse_top(parse_state *);
 static json_value parse_value(parse_state *);
 static json_object parse_object(parse_state *);
-static json_member *parse_members(parse_state *);
-static json_member *parse_member(parse_state *);
+static json_object parse_members(parse_state *);
+static json_member parse_member(parse_state *);
 static json_array parse_array(parse_state *);
 static json_array parse_elements(parse_state *);
 static json_value parse_element(parse_state *);
@@ -124,14 +126,14 @@ static void parse_false(parse_state *);
 static void parse_null(parse_state *);
 
 static json_value parse_top(parse_state *ps) {
-    trace(ps, "json");
+    tracep(ps, "json");
     json_value res = parse_element(ps);
     parse_char(ps, EOF);
     return res;
 }
 
 static json_value parse_value(parse_state *ps) {
-    trace(ps, "value");
+    tracep(ps, "value");
     if (peek(ps, '{'))
         return mk_object_value(parse_object(ps));
     else if (peek(ps, '['))
@@ -159,46 +161,39 @@ static json_value parse_value(parse_state *ps) {
 }
 
 static json_object parse_object(parse_state *ps) {
-    trace(ps, "object");
+    tracep(ps, "object");
     parse_char(ps, '{');
     parse_ws(ps);
     if (consume(ps, '}'))
-        return NULL;
+        return mk_object();
     else {
-        json_member *res = parse_members(ps);
+        json_object object = parse_members(ps);
         parse_char(ps, '}');
-        return res;
+        return object;
     }
 }
 
-static json_member *parse_members(parse_state *ps) {
-    trace(ps, "members");
-    json_member *member = parse_member(ps);
-    json_member *next = NULL;
-    if (consume(ps, ','))
-        next = parse_members(ps);
-    if (member) {
-        member->next = next;
-        return member;
-    }
-    return next;
+static json_object parse_members(parse_state *ps) {
+    tracep(ps, "members");
+    json_object res = mk_object();
+    object_append(&res, parse_member(ps));
+    while (consume(ps, ','))
+        object_append(&res, parse_member(ps));
+    return res;
 }
 
-static json_member *parse_member(parse_state *ps) {
-    trace(ps, "member");
+static json_member parse_member(parse_state *ps) {
+    tracep(ps, "member");
     parse_ws(ps);
     char *key = parse_string(ps);
     parse_ws(ps);
     parse_char(ps, ':');
     json_value val = parse_element(ps);
-    json_member *res = (json_member *)malloc(sizeof(json_member));
-    res->key = key;
-    res->val = val;
-    return res;
+    return (json_member){ key, val };
 }
 
 static json_array parse_array(parse_state *ps) {
-    trace(ps, "array");
+    tracep(ps, "array");
     parse_char(ps, '[');
     parse_ws(ps);
     if (consume(ps, ']'))
@@ -211,17 +206,16 @@ static json_array parse_array(parse_state *ps) {
 }
 
 static json_array parse_elements(parse_state *ps) {
-    trace(ps, "elements");
+    tracep(ps, "elements");
     json_array res = mk_array();
     array_append(&res, parse_element(ps));
     while (consume(ps, ','))
         array_append(&res, parse_element(ps));
-    //array_compact(&res);
     return res;
 }
 
 static json_value parse_element(parse_state *ps) {
-    trace(ps, "element");
+    tracep(ps, "element");
     parse_ws(ps);
     json_value res = parse_value(ps);
     parse_ws(ps);
@@ -229,7 +223,7 @@ static json_value parse_element(parse_state *ps) {
 }
 
 static char *parse_string(parse_state *ps) {
-    trace(ps, "string");
+    tracep(ps, "string");
     parse_char(ps, '\"');
     char *res = parse_characters(ps);
     parse_char(ps, '\"');
@@ -237,7 +231,7 @@ static char *parse_string(parse_state *ps) {
 }
 
 static char *parse_characters(parse_state *ps) {
-    trace(ps, "characters");
+    tracep(ps, "characters");
     int str_size = 16;
     char *res = malloc(str_size * sizeof(char));
     int i;
@@ -253,7 +247,7 @@ static char *parse_characters(parse_state *ps) {
 }
 
 static int parse_character(parse_state *ps, char *s) {
-    trace(ps, "character");
+    tracep(ps, "character");
     unsigned char c = (unsigned char)cur(ps);
     if (c == '\\')
         return parse_escape(ps, s);
@@ -293,7 +287,7 @@ static int parse_character(parse_state *ps, char *s) {
 }
 
 static int parse_escape(parse_state *ps, char *s) {
-    trace(ps, "escape");
+    tracep(ps, "escape");
     parse_char(ps, '\\');
     if (consume(ps, '\"'))
         *s = '\"';
@@ -324,7 +318,7 @@ static int parse_escape(parse_state *ps, char *s) {
 }
 
 static char parse_hex(parse_state *ps) {
-    trace(ps, "hex");
+    tracep(ps, "hex");
     char res;
     if ((res = consume_anyof(ps, "0123456789")))
         return res - '0';
@@ -339,7 +333,7 @@ static char parse_hex(parse_state *ps) {
 }
 
 static float parse_number(parse_state *ps) {
-    trace(ps, "number");
+    tracep(ps, "number");
     char s[48];
     int i = parse_integer(ps);
     int f = parse_fraction(ps);
@@ -349,13 +343,13 @@ static float parse_number(parse_state *ps) {
 }
 
 static int parse_integer(parse_state *ps) {
-    trace(ps, "integer");
+    tracep(ps, "integer");
     int sgn = consume(ps, '-') ? -1 : 1;
     return sgn * parse_pos_integer(ps);
 }
 
 static int parse_pos_integer(parse_state *ps) {
-    trace(ps, "pos_integer");
+    tracep(ps, "pos_integer");
     if (peek(ps, '0'))
         return parse_digit(ps);
     else if (peek_anyof(ps, "123456789"))
@@ -367,7 +361,7 @@ static int parse_pos_integer(parse_state *ps) {
 }
 
 static int parse_digits(parse_state *ps) {
-    trace(ps, "digits");
+    tracep(ps, "digits");
     int res = parse_digit(ps);
     while (peek_anyof(ps, "0123456789")) {
         res *= 10;
@@ -377,19 +371,19 @@ static int parse_digits(parse_state *ps) {
 }
 
 static int parse_digit(parse_state *ps) {
-    trace(ps, "digit");
+    tracep(ps, "digit");
     return parse_anyof(ps, "0123456789") - '0';
 }
 
 static int parse_fraction(parse_state *ps) {
-    trace(ps, "fraction");
+    tracep(ps, "fraction");
     if (consume(ps, '.'))
         return parse_digits(ps);
     return 0;
 }
 
 static int parse_exponent(parse_state *ps) {
-    trace(ps, "exponent");
+    tracep(ps, "exponent");
     if (consume(ps, 'E') || consume(ps, 'e')) {
         return parse_sign(ps) * parse_digits(ps);
     }
@@ -397,7 +391,7 @@ static int parse_exponent(parse_state *ps) {
 }
 
 static int parse_sign(parse_state *ps) {
-    trace(ps, "sign");
+    tracep(ps, "sign");
     if (consume(ps, '+'))
         return 1;
     else if (consume(ps, '-'))
@@ -407,12 +401,12 @@ static int parse_sign(parse_state *ps) {
 }
 
 static void parse_ws(parse_state *ps) {
-    trace(ps, "ws");
+    tracep(ps, "ws");
     while (consume_anyof(ps, " \n\r\t"));
 }
 
 static void parse_true(parse_state *ps) {
-    trace(ps, "true");
+    tracep(ps, "true");
     parse_char(ps, 't');
     parse_char(ps, 'r');
     parse_char(ps, 'u');
@@ -420,7 +414,7 @@ static void parse_true(parse_state *ps) {
 }
 
 static void parse_false(parse_state *ps) {
-    trace(ps, "false");
+    tracep(ps, "false");
     parse_char(ps, 'f');
     parse_char(ps, 'a');
     parse_char(ps, 'l');
@@ -429,7 +423,7 @@ static void parse_false(parse_state *ps) {
 }
 
 static void parse_null(parse_state *ps) {
-    trace(ps, "null");
+    tracep(ps, "null");
     parse_char(ps, 'n');
     parse_char(ps, 'u');
     parse_char(ps, 'l');
