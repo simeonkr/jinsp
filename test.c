@@ -6,7 +6,7 @@
 void round_trip_test(FILE *f) {
     parse_result pr = parse_json(f);
     if (pr.success) {
-        print_json(pr.res);
+        //print_json(pr.res);
     }
     else {
         print_error(stderr, pr);

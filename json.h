@@ -59,3 +59,5 @@ json_array mk_array();
 void array_append(json_array *array, json_value val);
 
 void array_compact(json_array *array);
+
+// TODO: free values, objects, and arrays

@@ -1,1 +1,7 @@
 *.o
+*.objdump
+*.ll
+*.dot
+*.yaml
+callgrind.out
+.vscode
