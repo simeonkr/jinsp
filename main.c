@@ -29,11 +29,12 @@ typedef struct {
 } pane;
 
 #define NUM_VIEW_PANES 3
-#define NUM_PANES (NUM_VIEW_PANES + 1)
+#define NUM_PANES (NUM_VIEW_PANES + 2)
 struct {
     int nrows, ncols;
     union {
         struct {
+            pane top_bar;
             pane status_bar;
             pane view_panes[NUM_VIEW_PANES];
         };
@@ -66,6 +67,15 @@ void pane_resize() {
 
     TRACE("pane_cols: %d\n", pane_cols);
 
+    // top bar
+    pane *tb = &window.top_bar;
+    tb->top = 0;
+    tb->left = 0;
+    tb->nrows = 1;
+    tb->ncols = window.ncols;
+    tb->rows = realloc(tb->rows, sizeof(string));
+    tb->rows[0] = mk_empty_string();
+
     // status bar
     pane *sb = &window.status_bar;
     sb->top = window.nrows - 1;
@@ -78,9 +88,9 @@ void pane_resize() {
     for (int i = 0, col = 0; i < NUM_VIEW_PANES;
          col += window.view_panes[i].ncols, i++) {
         pane *p = &window.view_panes[i];
-        p->top = 0;
+        p->top = 2;
         p->left = col;
-        p->nrows = window.nrows - 2;
+        p->nrows = window.nrows - 4;
         p->ncols = pane_cols + (i < rem);
         p->rows = realloc(p->rows, p->nrows * sizeof(string));
         for (int j = 0; j < p->nrows; j++)
@@ -88,7 +98,26 @@ void pane_resize() {
     }
 }
 
-void populate_view(pane *p, json_pos pos, int in_focus) {
+void print_cur_pos(string *s) {
+    string_printfa(s, FMT_BOLD);
+    for (int i = 0; i < stack.size - 1; i++) {
+        json_value value = stack.data[i].value;
+        int index = stack.data[i].index;
+        switch (value.kind) {
+            case OBJECT:
+                string_printfa(s, ".%s", object_get(value.object, index).key);
+                break;
+            case ARRAY:
+                string_printfa(s, "[%d]", index);
+                break;
+            default:
+                assert(0);
+        }
+    }
+    string_printfa(s, FMT_RESET);
+}
+
+void populate_view(pane *p, json_pos pos, int is_top) {
     json_value value = pos.value;
     int index = pos.index;
     int scroll_lim = p->nrows / 2 + 1;
@@ -99,7 +128,7 @@ void populate_view(pane *p, json_pos pos, int in_focus) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
-                if (in_focus && ri == curs_ri)
+                if (!is_top && ri == curs_ri)
                     string_printf(&p->rows[ri],
                         FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s" FMT_RESET,
                         object_get(value.object, di).key);
@@ -113,7 +142,7 @@ void populate_view(pane *p, json_pos pos, int in_focus) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.object);
                  ri++, di++) {
-                if (in_focus && ri == curs_ri)
+                if (!is_top && ri == curs_ri)
                     string_printf(&p->rows[ri],
                         FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%d" FMT_RESET, di);
                 else
@@ -154,17 +183,18 @@ void draw_pane(pane *p) {
 
 void draw() {
     // clear existing data
+    string_printf(&window.top_bar.rows[0], "");
     for (int i = 0; i < NUM_VIEW_PANES; i++)
         for (int ri = 0; ri < window.view_panes[i].nrows; ri++)
             string_printf(&window.view_panes[i].rows[ri], "");
 
     // fill each pane with corresponding data
     string_printf(&window.status_bar.rows[0], "%s", input_filename);
-    TRACE("%s\n", window.status_bar.rows[0].data);
+    print_cur_pos(&window.top_bar.rows[0]);
     assert(stack.size >= 1);
     int num_view_panes = min(stack.size, NUM_VIEW_PANES);
     for (int i = num_view_panes - 1, si = 0; i >= 0; i--, si++) {
-        populate_view(&window.view_panes[i], *stack_peekn(&stack, si), si == 1);
+        populate_view(&window.view_panes[i], *stack_peekn(&stack, si), si == 0);
     }
 
     printf(ED("2"));
@@ -292,6 +322,7 @@ void fin() {
     if (trace)
         fclose(trace);
 #endif
+    // TODO: free memory, including UI data
 }
 
 int main(int argc, char **argv) {
