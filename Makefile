@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS = -std=c99 -Wall -O0 -gdwarf-4
+CFLAGS = -std=c99 -Wall -O3
 OPT = /usr/lib/llvm-14/bin/opt
 OBJFILES = buffer.o json.o parse.o print.o
 

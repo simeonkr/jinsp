@@ -323,6 +323,10 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                     FMT_ITALIC "<Empty object>" FMT_RESET);
                 break;
             }
+            if (object_size(value.object) <= p->nrows) {
+                off = 0;
+                curs_ri = index;
+            }
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
@@ -337,6 +341,10 @@ void populate_view(pane *p, json_pos pos, int is_top) {
                 string_nprintf(&p->rows[0], p->ncols + 1 + 8,
                     FMT_ITALIC "<Empty array>" FMT_RESET);
                 break;
+            }
+            if (array_size(value.object) <= p->nrows) {
+                off = 0;
+                curs_ri = index;
             }
             for (int ri = 0, di = off;
                  ri < p->nrows && di < array_size(value.array);
