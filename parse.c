@@ -135,6 +135,7 @@ static char parse_escape(parse_state *);
 static char parse_hex(parse_state *);
 static float parse_number(parse_state *);
 static int parse_integer(parse_state *);
+static int parse_pos_integer(parse_state *ps);
 static int parse_digits(parse_state *);
 static int parse_digit(parse_state *);
 static int parse_fraction(parse_state *);
@@ -267,8 +268,10 @@ static char *parse_characters(parse_state *ps) {
     for (i = 0; !peek(ps, '\"'); i++) {
         char c = parse_character(ps);
         res[i] = c;
-        if (i >= str_size / 2)
-            res = realloc(res, 2 * str_size * sizeof(char));
+        if (i * 2 >= str_size) {
+            str_size *= 2;
+            res = realloc(res, str_size * sizeof(char));
+        }
     }
     res[i] = '\0';
     res = realloc(res, i * sizeof(char) + 1);
@@ -281,7 +284,7 @@ static char parse_character(parse_state *ps) {
         return parse_escape(ps);
     else if (peek(ps, '\"')) {
         error(ps);
-        return 0;
+        return '\0';
     }
     else {
         char c = cur(ps);
@@ -293,16 +296,30 @@ static char parse_character(parse_state *ps) {
 static char parse_escape(parse_state *ps) {
     trace(ps, "escape");
     parse_char(ps, '\\');
-    char res;
-    if ((res = consume_anyof(ps, "\"\\/bfnrt")))
-        return res;
+    if (consume(ps, '\"'))
+        return '\"';
+    else if (consume(ps, '\\'))
+        return '\\';
+    else if (consume(ps, '/'))
+        return '/';
+    else if (consume(ps, 'b'))
+        return '\b';
+    else if (consume(ps, 'f'))
+        return '\f';
+    else if (consume(ps, 'n'))
+        return '\n';
+    else if (consume(ps, 'r'))
+        return '\r';
+    else if (consume(ps, 't'))
+        return '\t';
+    // TODO: add unicode support
     else if (consume(ps, 'u')) {
-        res = 0;
+        unsigned res = 0;
         res += parse_hex(ps) << 6; 
         res += parse_hex(ps) << 4;
         res += parse_hex(ps) << 2; 
         res += parse_hex(ps);
-        return res;
+        return ' ';
     }
     else {
         error(ps);
@@ -335,6 +352,12 @@ static float parse_number(parse_state *ps) {
     return atof(s);
 }
 
+static int parse_integer(parse_state *ps) {
+    trace(ps, "integer");
+    int sgn = consume(ps, '-') ? -1 : 1;
+    return sgn * parse_pos_integer(ps);
+}
+
 static int parse_pos_integer(parse_state *ps) {
     trace(ps, "pos_integer");
     if (peek(ps, '0'))
@@ -346,12 +369,6 @@ static int parse_pos_integer(parse_state *ps) {
         recover(ps, ".Ee0123456789 \n\r\t,");
         return 0;
     }
-}
-
-static int parse_integer(parse_state *ps) {
-    trace(ps, "integer");
-    int sgn = consume_anyof(ps, "-") ? -1 : 1;
-    return sgn * parse_pos_integer(ps);
 }
 
 static int parse_digits(parse_state *ps) {
@@ -372,7 +389,7 @@ static int parse_digit(parse_state *ps) {
 static int parse_fraction(parse_state *ps) {
     trace(ps, "fraction");
     if (consume(ps, '.'))
-        return parse_digit(ps);
+        return parse_digits(ps);
     return 0;
 }
 
