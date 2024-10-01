@@ -117,14 +117,44 @@ void print_cur_pos(string *s) {
     string_printfa(s, FMT_RESET);
 }
 
-const char* get_value_fmt(json_value value) {
-    switch(value.kind) {
+// prints an element when key == "", a member otherwise
+void print_row(string *s, const char* key, int index, json_value value,
+               int cols, int selected) {
+    if (selected)
+        string_printfa(s, FMT_BOLD FMT_BG_RED FMT_FG_WHITE);
+    else
+        string_printfa(s, FMT_BG_BLACK FMT_FG_WHITE);
+
+    if (value.kind == OBJECT || value.kind == ARRAY)
+        string_printfa(s, FMT_UNDERLINE);
+
+    if (strlen(key) == 0)
+        string_printfa(s, "%d", index);
+    else
+        string_printfa(s, "%s", key);
+
+    /*switch (value.kind) {
         case OBJECT:
         case ARRAY:
-            return FMT_UNDERLINE FMT_FG_WHITE;
-        default:
-            return FMT_FG_WHITE;
-    }
+            break;
+        case STRING:
+            string_printfa(s, value.string);
+            break;
+        case NUMBER:
+            string_printfa(s, "%f", value.number);
+            break;
+        case TRUE:
+            string_printfa(s, "true");
+            break;
+        case FALSE:
+            string_printfa(s, "false");
+            break;
+        case NUL:
+            string_printfa(s, "null");
+            break;
+    }*/
+
+    string_printfa(s, FMT_RESET);
 }
 
 void populate_view(pane *p, json_pos pos, int is_top) {
@@ -138,34 +168,22 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             for (int ri = 0, di = off;
                  ri < p->nrows && di < object_size(value.object);
                  ri++, di++) {
-                const char* fmt = get_value_fmt(
-                    object_get(value.object, di).val);
-                if (!is_top && ri == curs_ri)
-                    string_printf(&p->rows[ri],
-                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s%s" FMT_RESET,
-                        fmt, object_get(value.object, di).key);
-                else
-                    string_printf(&p->rows[ri], 
-                        FMT_BG_BLACK FMT_FG_WHITE "%s%s" FMT_RESET,
-                        fmt, object_get(value.object, di).key);
+                json_member memb = object_get(value.object, di);
+                print_row(&p->rows[ri], memb.key, di, memb.val, p->ncols,
+                          !is_top && ri == curs_ri);
             }
             break;
         case ARRAY:
             for (int ri = 0, di = off;
-                 ri < p->nrows && di < array_size(value.object);
+                 ri < p->nrows && di < array_size(value.array);
                  ri++, di++) {
-                const char* fmt = get_value_fmt(
-                    array_get(value.array, di));
-                if (!is_top && ri == curs_ri)
-                    string_printf(&p->rows[ri],
-                        FMT_BOLD FMT_BG_RED "%s%d" FMT_RESET, fmt, di);
-                else
-                    string_printf(&p->rows[ri], 
-                        FMT_BG_BLACK "%s%d" FMT_RESET, fmt, di);
-                printf(FMT_RESET);
+                json_value elt = array_get(value.array, di);
+                print_row(&p->rows[ri], "", di, elt, p->ncols,
+                          !is_top && ri == curs_ri);
             }
             break;
         case STRING:
+            // TODO: wrap the string if is_top
             string_printf(&p->rows[0], value.string);
             break;
         case NUMBER:
@@ -276,7 +294,7 @@ void move_to_next(int off) {
         }
         cur->index = min(cur->index + off, max_idx);
         move_to_child();
-        TRACE("move_to_next: stack.size = %d, idx = %d, max_idx=%d\n", 
+        TRACE("move_to_next: stack.size = %d, idx = %d, max_idx=%d\n",
             stack.size, cur->index, max_idx);
     }
 }
