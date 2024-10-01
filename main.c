@@ -74,9 +74,6 @@ void pane_resize() {
 
     TRACE("nrows: %d, ncols: %d\n", window.nrows, window.ncols);
 
-    int pane_cols = window.ncols / NUM_VIEW_PANES;
-    int rem = window.ncols - pane_cols * NUM_VIEW_PANES;
-
     // top bar
     pane *tb = &window.top_bar;
     tb->top = 0;
@@ -97,13 +94,31 @@ void pane_resize() {
     sb->rows = calloc(1, sizeof(buffer));
     rowalloc(&sb->rows[0], sb->ncols);
 
-    for (int i = 0, col = 0; i < NUM_VIEW_PANES;
-         col += pane_cols + (i < rem), i++) {
+    int num_view_panes = min(stack.size, NUM_VIEW_PANES);
+    for (int i = 0, col = 0; i < num_view_panes; i++) {
         pane *p = &window.view_panes[i];
         p->top = 2;
         p->left = col;
         p->nrows = window.nrows - 4;
-        p->ncols = pane_cols + (i < rem) - 1;
+
+        int rem_panes = num_view_panes - i;
+        p->ncols = (window.ncols - col) / rem_panes - 1;
+        if (i < stack.size) {
+            json_pos *pos = stack_peekn(&stack, num_view_panes - 1 - i);
+            json_value val = pos->value;
+            int numNonLeaves = 0; // TODO: cache this value
+            int childrenToCount = min(window.nrows, array_size(val.array));
+            if (val.kind == ARRAY) {
+                for (int di = 0; di < childrenToCount; di++) {
+                    json_value child = array_get(val.object, di);
+                    numNonLeaves += child.kind == ARRAY || child.kind == OBJECT;
+                }
+                if (10 * numNonLeaves > 8 * childrenToCount)
+                    p->ncols = min(p->ncols, 10);
+            }
+        }
+        col += p->ncols + 1;
+
         free(p->rows);
         p->rows = calloc(p->nrows, sizeof(buffer));
         for (int j = 0; j < p->nrows; j++)
@@ -310,6 +325,11 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             break;
         case STRING: {
             char *s = value.string;
+            if (s[0] == '\0') {
+                string_nprintf(&p->rows[0], p->ncols + 1 + 8,
+                    FMT_ITALIC "<Empty string>" FMT_RESET);
+                break;
+            }
             for (int i = 0, ri = 0; ri < p->nrows && s[i] != '\0'; ri++) {
                 s += print_cols(&p->rows[ri], &s[i], p->ncols, 0).num_read;
             }
@@ -421,18 +441,22 @@ void loop() {
                     switch (in[2]) {
                         case KEY_UP:
                             move_to_prev(1);
+                            pane_resize();
                             draw();
                             break;
                         case KEY_DOWN:
                             move_to_next(1);
+                            pane_resize();
                             draw();
                             break;
                         case KEY_RIGHT:
                             move_to_child();
+                            pane_resize();
                             draw();
                             break;
                         case KEY_LEFT:
                             move_to_parent();
+                            pane_resize();
                             draw();
                             break;
                         case '5':
