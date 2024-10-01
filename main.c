@@ -5,6 +5,8 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <assert.h>
+#include <locale.h>
+#include <wchar.h>
 #include "term.h"
 #include "json.h"
 #include "parse.h"
@@ -44,6 +46,9 @@ struct {
 json_stack stack;
 
 void term_setup() {
+    // necessary for proper wcwidth() support
+    setlocale(LC_ALL, "");
+
     printf(ALT_BUF_EN);
     printf(CURS_HIDE);
     struct termios term;
@@ -111,9 +116,28 @@ void pane_resize() {
     }
 }
 
+// https://en.wikipedia.org/wiki/UTF-8#Encoding
+static inline wchar_t utf8_decode(const unsigned char *c) {
+    assert  (c[0] >= 0b11000000);
+    if      (c[0] < 0b11100000)
+        return (c[0] & 0b00011111) << 6  |
+               (c[1] & 0b00111111);
+    else if (c[0] < 0b11110000)
+        return (c[0] & 0b00001111) << 12 |
+               (c[1] & 0b00111111) << 6  |
+               (c[2] & 0b00111111);
+    else
+        return (c[0] & 0b00000111) << 18 |
+               (c[1] & 0b00111111) << 12 |
+               (c[2] & 0b00111111) << 6  |
+               (c[3] & 0b00111111);
+}
+
 typedef struct {
     int cols, num_read;
 } print_cols_r;
+
+int wcwidth(wchar_t);
 
 // returns the number of columns expected to be occupied
 print_cols_r print_cols(buffer *dest, const char *src, int num_cols,
@@ -151,24 +175,25 @@ print_cols_r print_cols(buffer *dest, const char *src, int num_cols,
             buffer_putchar(dest, src[i++]);
             cols++;
         }
-        // UTF-8
-        else if (c < 0xe0) {
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            cols++;
-        }
-        else if (c < 0xf0) {
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            cols++;
-        }
-        else {
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            buffer_putchar(dest, src[i++]);
-            cols++;
+        else { // UTF-8
+            wchar_t wc = utf8_decode(
+                (const unsigned char *)&src[i]);
+            if (c < 0xe0) {
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+            }
+            else if (c < 0xf0) {
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+            }
+            else {
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+                buffer_putchar(dest, src[i++]);
+            }
+            cols += wcwidth(wc);
         }
     }
     buffer_putchar(dest, '\0');
@@ -479,6 +504,7 @@ void fin() {
 #endif
     // TODO: free memory, including UI data
 }
+
 
 int main(int argc, char **argv) {
     if (argc != 2) {
