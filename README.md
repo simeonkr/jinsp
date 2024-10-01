@@ -1,11 +1,13 @@
 # jinsp
 
-jinsp provides a terminal-based interface (TUI) for quick inspection of JSON data.
-Its hierarchical visualization was inspired by that of the [ranger file manager](https://github.com/ranger/ranger).
+![screenshot](assets/screenshot1.png)
+
+jinsp is a terminal-based interface (TUI) for quick inspection of JSON data (on Linux only at present).
+It allows hierarchical navigation through the JSON contents, in a manner inspired by that of the [ranger file manager](https://github.com/ranger/ranger).
 
 ## Build
 
-On Linux, simply run `make`.
+Run `make` in the root directory.
 
 ## Usage
 
