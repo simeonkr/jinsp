@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <locale.h>
 #include <wchar.h>
+#include <limits.h>
 #include "term.h"
 #include "json.h"
 #include "parse.h"
@@ -444,15 +445,6 @@ void move_to_child() {
     }
 }
 
-void move_to_prev(int off) {
-    if (stack.size > 1) {
-        stack_pop(&stack);
-        json_pos *cur = stack_peek(&stack);
-        cur->index = max(cur->index - off, 0);
-        move_to_child();
-    }
-}
-
 void move_to_next(int off) {
     if (stack.size > 1) {
         stack_pop(&stack);
@@ -468,7 +460,7 @@ void move_to_next(int off) {
             default:
                 break;
         }
-        cur->index = min(cur->index + off, max_idx);
+        cur->index = min(max(cur->index + off, 0), max_idx);
         move_to_child();
     }
 }
@@ -549,7 +541,7 @@ void loop() {
                 if (num_read >= 3 && in[1] == '[') {
                     switch (in[2]) {
                         case KEY_UP:
-                            move_to_prev(1);
+                            move_to_next(-1);
                             draw();
                             break;
                         case KEY_DOWN:
@@ -568,13 +560,27 @@ void loop() {
                             break;
                         case '5':
                             if (in[3] == '~') { // PgUp
-                                move_to_prev(window.view_panes[0].nrows);
+                                move_to_next(-window.view_panes[0].nrows);
                                 draw();
                             }
                             break;
                         case '6':
                             if (in[3] == '~') { // PgDown
                                 move_to_next(window.view_panes[0].nrows);
+                                draw();
+                            }
+                            break;
+                        case '7':
+                        case 'H':
+                            if (in[3] == '~') { // Home
+                                move_to_next(INT_MIN);
+                                draw();
+                            }
+                            break;
+                        case '8':
+                        case 'F':
+                            if (in[3] == '~') { // End
+                                move_to_next(INT_MAX);
                                 draw();
                             }
                             break;
@@ -686,7 +692,7 @@ void fin() {
     }
 
     if (term_initialized) {
-        tcsetattr(STDIN_FILENO, 0, &saved_term);
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved_term);
         printf(CURS_SHOW);
         printf(ALT_BUF_DIS);
         printf(TRACKING_DIS);
@@ -706,8 +712,8 @@ int main(int argc, char **argv) {
     }
     input_filename = argv[1];
 
-      if(!isatty(STDIN_FILENO)){
-      fprintf(stderr, "Not a terminal.\n");
+    if(!isatty(STDIN_FILENO)){
+      fprintf(stderr, "Not a terminal\n");
       exit(EXIT_FAILURE);
     }
 
@@ -725,7 +731,7 @@ int main(int argc, char **argv) {
 
     FILE *f = fopen(input_filename, "r");
     if (!f) {
-        fprintf(stderr, "Error reading input file.\n");
+        fprintf(stderr, "Error reading input file\n");
         exit(EXIT_FAILURE);
     }
     parse_result pr = parse_json(f);
