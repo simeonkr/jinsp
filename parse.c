@@ -19,15 +19,15 @@ static inline char cur(const parse_state *ps) {
 }
 
 static void advance(parse_state *ps) {
-    ps->tok = fgetc(ps->f);
-    ps->consumed++;
     if (ps->tok == '\n') {
         ps->line++;
-        ps->col = 0;
+        ps->col = 1;
     }
     else {
         ps->col++;
     }
+    ps->tok = fgetc(ps->f);
+    ps->consumed++;
 }
 
 static void error(parse_state *ps) {
@@ -431,6 +431,11 @@ parse_result parse_json(FILE *input) {
 }
 
 void print_error(FILE *os, parse_result pe) {
-    fprintf(stderr, "Error on line %d, column %d: unexpected character %c\n", 
-                    pe.error.line, pe.error.col, pe.error.tok);
+    if (pe.error.tok == '\n')
+        fprintf(stderr, "Error on line %d: unexpected end of line\n", 
+                        pe.error.line);
+    else
+        fprintf(stderr, "Error on line %d, column %d: "
+                        "unexpected character %c\n", 
+                        pe.error.line, pe.error.col, pe.error.tok);
 }
