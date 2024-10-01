@@ -9,6 +9,7 @@
 #include <wchar.h>
 #include <limits.h>
 #include "term.h"
+#include "theme.h"
 #include "json.h"
 #include "parse.h"
 #include "stack.h"
@@ -278,9 +279,8 @@ int print_row(buffer *dest, const char* key, int index, json_value value,
               int max_cols, int selected) {
     int cols = max_cols;
     if (selected)
-        string_nprintf(dest, 0, FMT_BG_RED FMT_FG_WHITE FMT_BOLD);
-    else
-        string_nprintf(dest, 0, FMT_BG_BLACK FMT_FG_WHITE FMT_BOLD);
+        string_nprintf(dest, 0, ROW_SEL_BG ROW_SEL_FG);
+    string_nprintf(dest, 0, FMT_BOLD);
 
     if (strlen(key) == 0)
         cols -= string_nprintf(dest, cols + 1, "%d  ", index);
@@ -337,8 +337,9 @@ void populate_view(pane *p, json_pos pos, int is_top) {
         case OBJECT:
             if (object_size(value.object) == 0) {
                 assert(is_top);
-                string_nprintf(&p->rows[0], p->ncols + 1 + 8,
-                    FMT_ITALIC "<Empty object>" FMT_RESET);
+                string_nprintf(&p->rows[0], 0, FMT_ITALIC);
+                string_nprintf(&p->rows[0], p->ncols, "<Empty object>");
+                string_nprintf(&p->rows[0], 0, FMT_RESET);
                 break;
             }
             for (int ri = 0, di = off;
@@ -352,8 +353,9 @@ void populate_view(pane *p, json_pos pos, int is_top) {
         case ARRAY:
             if (array_size(value.array) == 0) {
                 assert(is_top);
-                string_nprintf(&p->rows[0], p->ncols + 1 + 8,
-                    FMT_ITALIC "<Empty array>" FMT_RESET);
+                string_nprintf(&p->rows[0], 0, FMT_ITALIC);
+                string_nprintf(&p->rows[0], p->ncols, "<Empty array>");
+                string_nprintf(&p->rows[0], 0, FMT_RESET);
                 break;
             }
             for (int ri = 0, di = off;
@@ -590,6 +592,14 @@ void loop() {
                             if (b == 0) { // Left button
                                 handle_mouse_press(Cx - 1, Cy - 1);
                                 pane_resize();
+                                draw();
+                            }
+                            else if (b == 64) { // Mouse wheel up
+                                move_to_next(-1);
+                                draw();
+                            }
+                            else if (b == 65) { // Mouse wheel down
+                                move_to_next(1);
                                 draw();
                             }
                             break;

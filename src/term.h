@@ -1,5 +1,7 @@
 #pragma once
 
+// reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+
 #define ESC             "\x1b"
 #define CSI             ESC "["
 
@@ -16,8 +18,10 @@
 #define CURS_HIDE       CSI "?25l"
 #define ALT_BUF_EN      CSI "?1049h"
 #define ALT_BUF_DIS     CSI "?1049l"
-#define TRACKING_EN     CSI "?9h"
-#define TRACKING_DIS    CSI "?9l"
+// "x11 xterm tracking mode"
+// (konsole does not support x10 compatibility mode)
+#define TRACKING_EN     CSI "?1000h"
+#define TRACKING_DIS    CSI "?1000l"
 
 #define SGR(n)          CSI n "m"
 #define FMT_RESET       SGR("0")
