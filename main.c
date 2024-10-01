@@ -61,10 +61,18 @@ void term_setup() {
     term_initialized = 1;
 }
 
-static void rowalloc(buffer *dest, int cols) {
-    // up to 4 bytes per (unicode) character + 32 formatting characters
-    unsigned capacity = 4 * cols + 32 + 1;
-    buffer_realloc(dest, capacity);
+static void reallocate_rows(pane *p, int nrows) {
+    for (int i = 0; i < p->nrows; i++)
+        buffer_free(&p->rows[i]);
+    p->nrows = nrows;
+    free(p->rows);
+    p->rows = calloc(nrows, sizeof(buffer));
+    for (int i = 0; i < p->nrows; i++) {
+        // up to 4 bytes per (unicode) character + 32 formatting characters
+        unsigned capacity = 4 * p->ncols + 32 + 1;
+        p->rows[i] = mk_buffer(capacity);
+        string_clear(&p->rows[i]);
+    }
 }
 
 int print_row(buffer *dest, const char* key, int index, json_value value,
@@ -82,38 +90,25 @@ void pane_resize() {
     pane *tb = &window.top_bar;
     tb->top = 0;
     tb->left = 0;
-    tb->nrows = 1;
     tb->ncols = window.ncols;
-    free(tb->rows);
-    tb->rows = calloc(1, sizeof(buffer));
-    rowalloc(&tb->rows[0], tb->ncols);
+    reallocate_rows(tb, 1);
 
     // status bar
     pane *sb = &window.status_bar;
     sb->top = window.nrows - 1;
     sb->left = 0;
-    sb->nrows = 1;
     sb->ncols = window.ncols;
-    free(sb->rows);
-    sb->rows = calloc(1, sizeof(buffer));
-    rowalloc(&sb->rows[0], sb->ncols);
+    reallocate_rows(sb, 1);
 
     int num_view_panes = min(stack.size, NUM_VIEW_PANES);
     for (int i = 0, col = 0; i < num_view_panes; i++) {
         pane *p = &window.view_panes[i];
         p->top = 2;
         p->left = col;
-        p->nrows = window.nrows - 4;
+        reallocate_rows(p, window.nrows - 4);
 
         int rem_panes = num_view_panes - i;
         p->ncols = (window.ncols - col) / rem_panes - 1;
-
-        free(p->rows);
-        p->rows = calloc(p->nrows, sizeof(buffer));
-        for (int j = 0; j < p->nrows; j++) {
-            rowalloc(&p->rows[j], p->ncols);
-            string_clear(&p->rows[j]);
-        }
         
         // try to shrink p->ncols
         if (i < num_view_panes - 1) {
@@ -604,17 +599,27 @@ void on_resize() {
 }
 
 void fin() {
+    json_value top = stack_peekn(&stack, stack.size - 1)->value;
+    value_free(top);
+
+    for (int i = 0; i < NUM_PANES; i++) {
+        pane *p = &window.panes[i];
+        for (int j = 0; j < p->nrows; j++)
+            buffer_free(&p->rows[j]);
+        free(p->rows);
+    }
+
     if (term_initialized) {
         tcsetattr(STDIN_FILENO, 0, &saved_term);
         printf(CURS_SHOW);
         printf(ALT_BUF_DIS);
         printf(TRACKING_DIS);
     }
+
 #ifdef DEBUG
     if (trace)
         fclose(trace);
 #endif
-    // TODO: free memory, including UI data
 }
 
 
