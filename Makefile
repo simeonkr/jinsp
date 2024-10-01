@@ -1,15 +1,15 @@
 CC = clang
 CFLAGS = -std=c99 -Wall -O3
 OPT = /usr/lib/llvm-14/bin/opt
-OBJFILES = buffer.o json.o parse.o print.o
+OBJFILES = src/buffer.o src/json.o src/parse.o src/print.o
 
-main: main.o $(OBJFILES)
+jinsp: src/main.o $(OBJFILES)
 	$(CC) $(CFLAGS) $^ -o $@
 
-test: test.o $(OBJFILES)
+test: src/test.o $(OBJFILES)
 	$(CC) $(CFLAGS) $^ -o $@
 
-%.o: %.c
+src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.ll: %.c
@@ -18,4 +18,4 @@ test: test.o $(OBJFILES)
 	$(OPT) --dot-callgraph --disable-output --enable-new-pm=0 $@
 
 clean:
-	rm *.o *.ll *.dot *.dot *.opt.yaml *.objdump
+	rm src/*.o src/*.ll src/*.dot src/*.dot src/*.opt.yaml src/*.objdump
