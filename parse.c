@@ -1,22 +1,17 @@
 #include <stdlib.h>
 #include <assert.h>
+#include <setjmp.h>
 #include "parse.h"
 
 typedef struct parse_error parse_error;
 typedef struct parse_state parse_state;
-
-struct parse_error {
-    int line, col;
-    char seen;
-    parse_error *next;
-};
 
 struct parse_state {
     FILE *f;
     int consumed;
     int line, col;
     char tok;
-    parse_error *errors;
+    jmp_buf on_err;
 };
 
 static inline char cur(const parse_state *ps) {
@@ -36,25 +31,7 @@ static void advance(parse_state *ps) {
 }
 
 static void error(parse_state *ps) {
-    parse_error **cur;
-    for (cur = &ps->errors; *cur != NULL; cur = &(*cur)->next);
-    *cur = (parse_error *)malloc(sizeof(parse_error));
-    (*cur)->line = ps->line;
-    (*cur)->col = ps->col;
-    (*cur)->seen = ps->tok;
-    (*cur)->next = NULL;
-
-    advance(ps);
-}
-
-static void recover(parse_state *ps, const char *valid_toks) {
-    while (cur(ps) != EOF) {
-        for (const char *c = valid_toks; *c != '\0'; c++) {
-            if (cur(ps) == *c)
-                return;
-            advance(ps);
-        }
-    }
+    longjmp(ps->on_err, 1);
 }
 
 static inline void trace(parse_state *ps, const char *msg) {
@@ -120,7 +97,7 @@ static int parse_anyof(parse_state *ps, char *tok_str) {
     return 0;
 }
 
-static json_value parse_json(parse_state *);
+static json_value parse_top(parse_state *);
 static json_value parse_value(parse_state *);
 static json_object parse_object(parse_state *);
 static json_member *parse_members(parse_state *);
@@ -146,10 +123,10 @@ static void parse_true(parse_state *);
 static void parse_false(parse_state *);
 static void parse_null(parse_state *);
 
-static json_value parse_json(parse_state *ps) {
+static json_value parse_top(parse_state *ps) {
     trace(ps, "json");
     json_value res = parse_element(ps);
-    assert(cur(ps) == EOF);
+    parse_char(ps, EOF);
     return res;
 }
 
@@ -177,7 +154,6 @@ static json_value parse_value(parse_state *ps) {
     }
     else {
         error(ps);
-        recover(ps, " \n\r\t,]");
         return mk_null_value();
     }
 }
@@ -366,7 +342,6 @@ static int parse_pos_integer(parse_state *ps) {
         return parse_digits(ps);
     else {
         error(ps);
-        recover(ps, ".Ee0123456789 \n\r\t,");
         return 0;
     }
 }
@@ -441,8 +416,21 @@ static void parse_null(parse_state *ps) {
     parse_char(ps, 'l');
 }
 
-json_value parse(FILE *input) {
-    parse_state ps = { input, 0, 1, 0, 0, NULL };
+parse_result parse_json(FILE *input) {
+    parse_state ps = { .f = input, .consumed = 0, .line = 1, .col = 0 };
     advance(&ps);
-    return parse_json(&ps);
+    if (setjmp(ps.on_err)) {
+        parse_result pe;
+        pe.success = 0;
+        pe.error.line = ps.line;
+        pe.error.col = ps.col;
+        pe.error.tok = ps.tok;
+        return pe;
+    }
+    return (parse_result){ .success = 1, .res = parse_top(&ps) };
+}
+
+void print_error(FILE *os, parse_result pe) {
+    fprintf(stderr, "Error on line %d, column %d: unexpected character %c\n", 
+                    pe.error.line, pe.error.col, pe.error.tok);
 }

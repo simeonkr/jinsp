@@ -2,4 +2,4 @@
 
 #include "json.h"
 
-void print(json_value value);
+void print_json(json_value value);

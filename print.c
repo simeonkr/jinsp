@@ -7,7 +7,7 @@ static void print_indent(int count) {
         printf("    ");
 }
 
-static void print_json(json_value);
+static void print_top(json_value);
 static void print_value(json_value, int);
 static void print_object(json_object, int);
 static void print_members(json_member *, int);
@@ -21,7 +21,7 @@ static void print_true();
 static void print_false();
 static void print_null();
 
-static void print_json(json_value value) {
+static void print_top(json_value value) {
     print_value(value, 0);
     putchar('\n');
 }
@@ -123,6 +123,6 @@ static void print_null() {
     printf("null");
 }
 
-void print(json_value value) {
-    print_json(value);
+void print_json(json_value value) {
+    print_top(value);
 }
