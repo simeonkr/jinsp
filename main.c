@@ -66,6 +66,9 @@ static void rowalloc(buffer *dest, int cols) {
     buffer_realloc(dest, capacity);
 }
 
+int print_row(buffer *dest, const char* key, int index, json_value value,
+              int max_cols, int selected);
+
 void pane_resize() {
     struct winsize wsize;
     ioctl(STDIN_FILENO, TIOCGWINSZ, &wsize);
@@ -103,26 +106,42 @@ void pane_resize() {
 
         int rem_panes = num_view_panes - i;
         p->ncols = (window.ncols - col) / rem_panes - 1;
-        if (i < stack.size) {
-            json_pos *pos = stack_peekn(&stack, num_view_panes - 1 - i);
-            json_value val = pos->value;
-            int numNonLeaves = 0; // TODO: cache this value
-            int childrenToCount = min(window.nrows, array_size(val.array));
-            if (val.kind == ARRAY) {
-                for (int di = 0; di < childrenToCount; di++) {
-                    json_value child = array_get(val.object, di);
-                    numNonLeaves += child.kind == ARRAY || child.kind == OBJECT;
-                }
-                if (10 * numNonLeaves > 8 * childrenToCount)
-                    p->ncols = min(p->ncols, 10);
-            }
-        }
-        col += p->ncols + 1;
 
         free(p->rows);
         p->rows = calloc(p->nrows, sizeof(buffer));
-        for (int j = 0; j < p->nrows; j++)
+        for (int j = 0; j < p->nrows; j++) {
             rowalloc(&p->rows[j], p->ncols);
+            string_clear(&p->rows[j]);
+        }
+        
+        // try to shrink p->ncols
+        if (i < num_view_panes - 1) {
+            json_pos *pos = stack_peekn(&stack, num_view_panes - 1 - i);
+            json_value val = pos->value;
+            if (val.kind == OBJECT) {
+                int rows = min(p->nrows, object_size(val.array));
+                int longest_row = 0;
+                for (int di = 0; di < rows; di++) {
+                    json_member memb = object_get(val.object, di);
+                    int cols = print_row(
+                        &p->rows[di], memb.key, di, memb.val, p->ncols, 0);
+                    longest_row = max(longest_row, cols);
+                }
+                p->ncols = min(longest_row + 1, p->ncols);
+            }
+            else if (val.kind == ARRAY) {
+                int rows = min(p->nrows, array_size(val.array));
+                int longest_row = 0;
+                for (int di = 0; di < rows; di++) {
+                    json_value elt = array_get(val.object, di);
+                    int cols = print_row(
+                        &p->rows[di], "", di, elt, p->ncols, 0);
+                    longest_row = max(longest_row, cols);
+                }
+                p->ncols = min(longest_row + 1, p->ncols);
+            }
+        }
+        col += p->ncols + 1;
     }
 }
 
@@ -255,8 +274,9 @@ int summarize_value(buffer *dest, json_value value, int cols) {
 }
 
 // prints an element when key == "", a member otherwise
-void print_row(buffer *dest, const char* key, int index, json_value value,
-               int cols, int selected) {
+int print_row(buffer *dest, const char* key, int index, json_value value,
+              int max_cols, int selected) {
+    int cols = max_cols;
     if (selected)
         string_nprintf(dest, 0, FMT_BG_RED FMT_FG_WHITE FMT_BOLD);
     else
@@ -276,6 +296,8 @@ void print_row(buffer *dest, const char* key, int index, json_value value,
         cols -= summarize_value(dest, value, cols);
     assert(dest->data[dest->raw_size - 1] == '\0');
 
+    int used_cols = max_cols - cols;
+
     if (cols > 0) {
         dest->raw_size--;
         for (; cols > 0; cols--)
@@ -284,6 +306,7 @@ void print_row(buffer *dest, const char* key, int index, json_value value,
     }
 
     string_nprintf(dest, 0, FMT_RESET);
+    return used_cols;
 }
 
 void populate_view(pane *p, json_pos pos, int is_top) {
@@ -441,12 +464,10 @@ void loop() {
                     switch (in[2]) {
                         case KEY_UP:
                             move_to_prev(1);
-                            pane_resize();
                             draw();
                             break;
                         case KEY_DOWN:
                             move_to_next(1);
-                            pane_resize();
                             draw();
                             break;
                         case KEY_RIGHT:
