@@ -1,0 +1,11 @@
+{
+    "key1" : "value1",
+    "key2" : [
+        "element1",
+        "element2",
+        [ 1,2,3,4 ],
+        {"red" : 100, "green" : 200, "blue" : 200},
+        true
+    ],
+    "key3" : [ "abc", null, { }, [ ] ]
+}
