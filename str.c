@@ -3,39 +3,34 @@
 #include "str.h"
 
 string mk_empty_string() {
-    string res;
-    res.size = 1;
-    res.capacity = 16;
-    res.data = (char *)malloc(res.capacity * sizeof(char));
-    res.data[0] = '\0';
-    return res;
+    string s;
+    s.size = 0;
+    s.capacity = 16;
+    s.data = (char *)malloc(s.capacity * sizeof(char));
+    s.data[0] = '\0';
+    return s;
 }
 
-static string string_expand(string s, unsigned increase) {
-    string res = s;
-    res.size += increase;
-    if (res.size * 2 >= res.capacity) {
-        res.capacity = res.size * 2;
+void string_append(string *s, const char *cstr) {
+    unsigned new_size = s->size + strlen(cstr);
+    if (new_size * 2 >= s->capacity) {
+        s->capacity = new_size * 2;
+        s->data = (char *)realloc(s->data, new_size * sizeof(char));
     }
-    res.data = (char *)realloc(res.data, res.size * sizeof(char));
-    return res;
-}
-
-void string_append(string s, const char *cstr) {
-    string res = string_expand(s, strlen(cstr));
-    strncpy(&res.data[res.size], cstr, strlen(cstr));
+    strncpy(&s->data[s->size], cstr, strlen(cstr) + 1);
+    s->size = new_size;
 };
 
 string mk_string(const char *cstr) {
-    string res = mk_empty_string();
-    string_append(res, cstr);
-    return res;
+    string s = mk_empty_string();
+    string_append(&s, cstr);
+    return s;
 }
 
-void string_printf(string s, const char *fmt, ...) {
+void string_printf(string *s, const char *fmt, ...) {
 
 }
 
-void string_free(string s) {
-    free(s.data);
+void string_free(string *s) {
+    free(s->data);
 }
