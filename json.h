@@ -68,7 +68,7 @@ static inline json_object mk_object() {
 }
 
 static inline unsigned object_size(json_object object) {
-    return object.size / sizeof(json_member);
+    return object.raw_size / sizeof(json_member);
 }
 
 static inline json_member object_get(json_object object, int index) {
@@ -86,7 +86,7 @@ static inline json_array mk_array() {
 };
 
 static inline unsigned array_size(json_array array) {
-    return array.size / sizeof(json_value);
+    return array.raw_size / sizeof(json_value);
 }
 
 static inline json_value array_get(json_object array, int index) {

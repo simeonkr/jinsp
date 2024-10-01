@@ -11,6 +11,7 @@
 #include "parse.h"
 #include "stack.h"
 #include "trace.h"
+#include "util.h"
 
 #ifdef DEBUG
 FILE *trace;
@@ -25,7 +26,6 @@ typedef struct {
     int top, left;
     int nrows, ncols;
     string *rows;
-    int start_off;
 } pane;
 
 #define NUM_VIEW_PANES 3
@@ -75,35 +75,52 @@ void pane_resize() {
     sb->rows = realloc(sb->rows, sizeof(string));
     sb->rows[0] = mk_empty_string();
 
-    for (int i = 0, col = 0; i <= NUM_VIEW_PANES;
-         col += window.panes[i].ncols, i++) {
+    for (int i = 0, col = 0; i < NUM_VIEW_PANES;
+         col += window.view_panes[i].ncols, i++) {
         pane *p = &window.view_panes[i];
         p->top = 0;
         p->left = col;
         p->nrows = window.nrows - 2;
         p->ncols = pane_cols + (i < rem);
         p->rows = realloc(p->rows, p->nrows * sizeof(string));
-        for (int i = 0; i < p->nrows; i++)
-            p->rows[i] = mk_empty_string();
+        for (int j = 0; j < p->nrows; j++)
+            p->rows[j] = mk_empty_string();
     }
 }
 
 void populate_view(pane *p, json_pos pos) {
     json_value value = pos.value;
     int index = pos.index;
+    int scroll_lim = p->nrows / 2 + 1;
+    int off = index <= scroll_lim ? 0 : index - scroll_lim;
+    int curs_ri = min(index, scroll_lim);
     switch (pos.value.kind) {
         case OBJECT:
-            for (int vi = p->start_off, ri = 0;
-                 vi < object_size(value.object) && ri < p->nrows;
-                 vi++, ri++) {
-                string_printf(&p->rows[ri], "%d", vi);
+            for (int ri = 0, di = off;
+                 ri < p->nrows && di < object_size(value.object);
+                 ri++, di++) {
+                if (ri == curs_ri)
+                    string_printf(&p->rows[ri],
+                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%s" FMT_RESET,
+                        object_get(value.object, di).key);
+                else
+                    string_printf(&p->rows[ri], 
+                        FMT_BG_BLACK FMT_FG_WHITE "%s" FMT_RESET,
+                        object_get(value.object, di).key);
             }
             break;
         case ARRAY:
-            for (int vi = p->start_off, ri = 0;
-                 vi < array_size(value.array) && ri < p->nrows;
-                 vi++, ri++) {
-                string_printf(&p->rows[ri], "%d", vi);
+            for (int ri = 0, di = off;
+                 ri < p->nrows && di < array_size(value.object);
+                 ri++, di++) {
+                if (ri == curs_ri)
+                    string_printf(&p->rows[ri],
+                        FMT_BOLD FMT_BG_RED FMT_FG_WHITE "%d" FMT_RESET, 
+                        di);
+                else
+                    string_printf(&p->rows[ri], 
+                        FMT_BG_BLACK FMT_FG_WHITE "%d" FMT_RESET, di);
+                printf(FMT_RESET);
             }
             break;
         case STRING:
@@ -139,17 +156,14 @@ void draw_pane(pane *p) {
 void draw() {
     // fill each pane with corresponding data
     string_printf(&window.status_bar.rows[0], "%s", input_filename);
+    TRACE("%s\n", window.status_bar.rows[0].data);
     assert(stack.size >= 1);
-    if (stack.size == 1) {
-        populate_view(&window.view_panes[1], *stack_peek(&stack));
-    }
-    else {
-        for (int i = 0; i <= NUM_VIEW_PANES; i++) {
-            if (i >= stack.size)
-                break;
-            populate_view(&window.view_panes[i],
-                *stack_peekn(&stack, NUM_VIEW_PANES - 1 - i));
-        }
+    int num_view_panes = min(stack.size, NUM_VIEW_PANES);
+    for (int i = 0; i < num_view_panes; i++) {
+        if (i >= stack.size)
+            break;
+        populate_view(&window.view_panes[i],
+            *stack_peekn(&stack, num_view_panes - 1 - i));
     }
 
     printf(ED("2"));
@@ -160,10 +174,13 @@ void draw() {
 }
 
 void move_to_parent() {
-    stack_pop(&stack);
+    TRACE("move_to_parent: stack.size = %d\n", stack.size);
+    if (stack.size > 1)
+        stack_pop(&stack);
 }
 
 void move_to_child() {
+    TRACE("move_to_child: stack.size = %d\n", stack.size);
     json_pos *cur = stack_peek(&stack);
     switch (cur->value.kind) {
         json_value next;
@@ -181,12 +198,18 @@ void move_to_child() {
 }
 
 void move_to_prev() {
-    json_pos *cur = stack_peek(&stack);
-    cur->index = cur->index - 1 > 0 ? cur->index - 1 : 0;
+    TRACE("move_to_prev: stack.size = %d\n", stack.size);
+    if (stack.size == 1)
+        return;
+    json_pos *cur = stack_peekn(&stack, 1);
+    cur->index = max(cur->index - 1, 0);
 }
 
 void move_to_next() {
-    json_pos *cur = stack_peek(&stack);
+    TRACE("move_to_next: stack.size = %d\n", stack.size);
+    if (stack.size == 1)
+        return;
+    json_pos *cur = stack_peekn(&stack, 1);
     int max_idx = 0;
     switch (cur->value.kind) {
         case OBJECT:
@@ -198,7 +221,7 @@ void move_to_next() {
         default:
             break;
     }
-    cur->index = cur->index + 1 < max_idx ? cur->index + 1 : max_idx;
+    cur->index = min(cur->index + 1, max_idx);
 }
 
 void loop() {
@@ -278,6 +301,9 @@ int main(int argc, char **argv) {
     atexit(fin);
     signal(SIGINT, on_term);
     signal(SIGTERM, on_term);
+#ifndef DEBUG
+    signal(SIGABRT, on_term);
+#endif
 
 #ifdef DEBUG
     trace = fopen("trace.txt", "w");
@@ -298,7 +324,7 @@ int main(int argc, char **argv) {
     json_value top = pr.res;
 
     stack_push(&stack, (json_pos){top, 0});
-    move_to_next();
+    move_to_child();
 
     term_setup();
     pane_resize();

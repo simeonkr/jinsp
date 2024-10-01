@@ -12,11 +12,27 @@ string mk_empty_string() {
     return s;
 }
 
+static void string_vprintfa(string *s, const char *fmt, va_list args) {
+    va_list saved_args;
+    va_copy(saved_args, args);
+    int new_size = s->size + 
+        vsnprintf(&s->data[s->size], s->capacity - s->size, fmt, args);
+    int retry = new_size + 1 > s->capacity;
+    if ((new_size + 1) * 2 >= s->capacity) {
+        s->capacity = (new_size + 1) * 2;
+        s->data = (char *)realloc(s->data, s->capacity * sizeof(char));
+    }
+    if (retry) {
+        vsnprintf(&s->data[s->size], s->capacity - s->size, fmt, saved_args);
+    }
+    s->size = new_size;
+}
+
 string mk_string(const char *fmt, ...) {
     string s = mk_empty_string();
     va_list args;
     va_start(args, fmt);
-    string_printf(&s, fmt, args);
+    string_vprintfa(&s, fmt, args);
     va_end(args);
     return s;
 }
@@ -25,23 +41,15 @@ void string_printf(string *s, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     s->size = 0;
-    string_printfa(s, fmt, args);
+    string_vprintfa(s, fmt, args);
     va_end(args);
 }
 
 void string_printfa(string *s, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    int new_size = s->size + snprintf(s->data, s->capacity, fmt, args);
+    string_vprintfa(s, fmt, args);
     va_end(args);
-    if (new_size * 2 >= s->capacity) {
-        s->capacity = new_size * 2;
-        s->data = (char *)realloc(s->data, new_size * sizeof(char));
-    }
-    if (new_size > s->capacity) {
-        snprintf(s->data, s->capacity, fmt, args);
-    }
-    s->size = new_size;
 }
 
 void string_free(string *s) {

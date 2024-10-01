@@ -4,7 +4,7 @@
 
 typedef struct {
     char *data;
-    unsigned size, capacity;
+    unsigned raw_size, capacity;
 } buffer;
 
 buffer mk_buffer();

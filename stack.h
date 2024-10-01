@@ -18,7 +18,7 @@ static inline json_pos *stack_peek(json_stack *stack) {
 }
 
 static inline json_pos *stack_peekn(json_stack *stack, int n) {
-    assert(n < stack->size);
+    assert(n <= stack->size);
     return &stack->data[stack->size - 1 - n];
 }
 
