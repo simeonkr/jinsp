@@ -107,8 +107,8 @@ static json_array parse_elements(parse_state *);
 static json_value parse_element(parse_state *);
 static char *parse_string(parse_state *);
 static char *parse_characters(parse_state *);
-static char parse_character(parse_state *);
-static char parse_escape(parse_state *);
+static int parse_character(parse_state *, char *);
+static int parse_escape(parse_state *, char *);
 static char parse_hex(parse_state *);
 static float parse_number(parse_state *);
 static int parse_integer(parse_state *);
@@ -241,9 +241,7 @@ static char *parse_characters(parse_state *ps) {
     int str_size = 16;
     char *res = malloc(str_size * sizeof(char));
     int i;
-    for (i = 0; !peek(ps, '\"'); i++) {
-        char c = parse_character(ps);
-        res[i] = c;
+    for (i = 0; !peek(ps, '\"'); i += parse_character(ps, &res[i])) {
         if (i * 2 >= str_size) {
             str_size *= 2;
             res = realloc(res, str_size * sizeof(char));
@@ -254,53 +252,75 @@ static char *parse_characters(parse_state *ps) {
     return res;
 }
 
-static char parse_character(parse_state *ps) {
+static int parse_character(parse_state *ps, char *s) {
     trace(ps, "character");
-    if (peek(ps, '\\'))
-        return parse_escape(ps);
-    else if (peek(ps, '\"') || ps->tok < 0x20) {
+    unsigned char c = (unsigned char)cur(ps);
+    if (c == '\\')
+        return parse_escape(ps, s);
+    else if (c == '\"' || c < 0x20) {
         error(ps);
-        return '\0';
+        return 0;
     }
-    else {
-        char c = cur(ps);
+    else if (c <= 0x7f) {
         consume(ps, c);
-        return c;
+        *s = c;
+        return 1;
+    }
+    // UTF-8 support
+    else {
+        int num_read;
+        if (c < 0xe0) {
+            s[0] = c;
+            s[1] = fgetc(ps->f);
+            num_read = 2;
+        }
+        else if (c < 0xf0) {
+            s[0] = c;
+            s[1] = fgetc(ps->f);
+            s[2] = fgetc(ps->f);
+            num_read = 3;
+        }
+        else {
+            s[0] = c;
+            s[1] = fgetc(ps->f);
+            s[2] = fgetc(ps->f);
+            s[3] = fgetc(ps->f);
+            num_read = 4;
+        }
+        advance(ps);
+        return num_read;
     }
 }
 
-static char parse_escape(parse_state *ps) {
+static int parse_escape(parse_state *ps, char *s) {
     trace(ps, "escape");
     parse_char(ps, '\\');
     if (consume(ps, '\"'))
-        return '\"';
+        *s = '\"';
     else if (consume(ps, '\\'))
-        return '\\';
+        *s = '\\';
     else if (consume(ps, '/'))
-        return '/';
+        *s = '/';
     else if (consume(ps, 'b'))
-        return '\b';
+        *s = '\b';
     else if (consume(ps, 'f'))
-        return '\f';
+        *s = '\f';
     else if (consume(ps, 'n'))
-        return '\n';
+        *s = '\n';
     else if (consume(ps, 'r'))
-        return '\r';
+        *s = '\r';
     else if (consume(ps, 't'))
-        return '\t';
-    // TODO: add unicode support
+        *s = '\t';
     else if (consume(ps, 'u')) {
-        unsigned res = 0;
-        res += parse_hex(ps) << 6; 
-        res += parse_hex(ps) << 4;
-        res += parse_hex(ps) << 2; 
-        res += parse_hex(ps);
-        return ' ';
+        s[0] = parse_hex(ps) << 4 | parse_hex(ps);
+        s[1] = parse_hex(ps) << 4 | parse_hex(ps); 
+        return 2;
     }
     else {
         error(ps);
         return 0;
     }
+    return 1;
 }
 
 static char parse_hex(parse_state *ps) {
@@ -309,9 +329,9 @@ static char parse_hex(parse_state *ps) {
     if ((res = consume_anyof(ps, "0123456789")))
         return res - '0';
     else if ((res = consume_anyof(ps, "ABCDEF")))
-        return res - 'A';
+        return 10 + res - 'A';
     else if (consume_anyof(ps, "abcdef"))
-        return res - 'a';
+        return 10 + res - 'a';
     else {
         error(ps);
         return 0;
