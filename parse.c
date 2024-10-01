@@ -349,7 +349,7 @@ static char parse_hex(parse_state *ps) {
         return res - '0';
     else if ((res = consume_anyof(ps, "ABCDEF")))
         return 10 + res - 'A';
-    else if (consume_anyof(ps, "abcdef"))
+    else if ((res = consume_anyof(ps, "abcdef")))
         return 10 + res - 'a';
     else {
         error(ps);
