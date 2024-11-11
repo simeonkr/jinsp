@@ -1,4 +1,2 @@
 *.o
-*.objdump
-*.ll
 trace.txt
