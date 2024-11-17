@@ -83,7 +83,7 @@ static void reallocate_rows(pane *p, int nrows) {
 }
 
 int print_row(buffer *dest, const char* key, int index, json_value value,
-              int max_cols, int selected);
+              int max_cols, int selected, int unfolded);
 
 void pane_resize() {
     struct winsize wsize;
@@ -127,7 +127,7 @@ void pane_resize() {
                 for (int di = 0; di < rows; di++) {
                     json_member memb = object_get(val.object, di);
                     int cols = print_row(
-                        &p->rows[di], memb.key, di, memb.val, p->ncols, 0);
+                        &p->rows[di], memb.key, di, memb.val, p->ncols, 0, 0);
                     longest_row = max(longest_row, cols);
                 }
                 p->ncols = min(longest_row + 1, p->ncols);
@@ -138,7 +138,7 @@ void pane_resize() {
                 for (int di = 0; di < rows; di++) {
                     json_value elt = array_get(val.object, di);
                     int cols = print_row(
-                        &p->rows[di], "", di, elt, p->ncols, 0);
+                        &p->rows[di], "", di, elt, p->ncols, 0, 0);
                     longest_row = max(longest_row, cols);
                 }
                 p->ncols = min(longest_row + 1, p->ncols);
@@ -255,14 +255,22 @@ void print_cur_pos(buffer *dest, int cols) {
     string_nprintf(dest, 0, FMT_RESET);
 }
 
-int summarize_value(buffer *dest, json_value value, int cols) {
+int summarize_value(buffer *dest, json_value value, int cols, int unfolded) {
     switch (value.kind) {
         case OBJECT:
-            return string_nprintf(dest, cols + 1,
-                object_size(value.object) > 0 ? "{..}" : "{}");
+            if (object_size(value.object) == 0)
+                return string_nprintf(dest, cols + 1, "{}");
+            else if (!unfolded)
+                return string_nprintf(dest, cols + 1, "{..}");
+            else
+                return 0;
         case ARRAY:
-            return string_nprintf(dest, cols + 1,
-                array_size(value.array) > 0 ? "[..]" : "[]");
+            if (array_size(value.object) == 0)
+                return string_nprintf(dest, cols + 1, "[]");
+            else if (!unfolded)
+                return string_nprintf(dest, cols + 1, "[..]");
+            else
+                return 0;
         case STRING:
             return print_cols(dest, value.string, cols, 1).cols;
         case NUMBER:
@@ -276,12 +284,21 @@ int summarize_value(buffer *dest, json_value value, int cols) {
             return string_nprintf(dest, cols + 1, "false");
         case NUL:
             return string_nprintf(dest, cols + 1, "null");
+        default:
+            return 0;
     }
+}
+
+void append_spaces(buffer *dest, int num) {
+    dest->raw_size--;
+    for (; num > 0; num--)
+        buffer_putchar(dest, ' ');
+    buffer_putchar(dest, '\0');
 }
 
 // prints an element when key == "", a member otherwise
 int print_row(buffer *dest, const char* key, int index, json_value value,
-              int max_cols, int selected) {
+              int max_cols, int selected, int unfolded) {
     int cols = max_cols;
     if (selected)
         string_nprintf(dest, 0, ROW_SEL_BG ROW_SEL_FG);
@@ -298,20 +315,74 @@ int print_row(buffer *dest, const char* key, int index, json_value value,
     string_nprintf(dest, 0, FMT_NOBOLD);
 
     if (cols > 0)
-        cols -= summarize_value(dest, value, cols);
+        cols -= summarize_value(dest, value, cols, unfolded);
     assert(dest->data[dest->raw_size - 1] == '\0');
 
     int used_cols = max_cols - cols;
 
-    if (cols > 0) {
-        dest->raw_size--;
-        for (; cols > 0; cols--)
-            buffer_putchar(dest, ' ');
-        buffer_putchar(dest, '\0');
-    }
+    if (cols > 0)
+        append_spaces(dest, cols);
 
     string_nprintf(dest, 0, FMT_RESET);
     return used_cols;
+}
+
+// return number of rows printed
+int print_value(buffer *dest, json_value value, int rows, int cols, int indent) {
+    if (rows <= 0 || indent >= cols)
+        return 0;
+    switch (value.kind) {
+        case OBJECT:
+            if (object_size(value.object) == 0) {
+                if (indent > 0)
+                    return 0;
+                append_spaces(&dest[0], indent);
+                string_nprintf(&dest[0], 0, FMT_ITALIC);
+                string_nprintf(&dest[0], cols, "<Empty object>");
+                string_nprintf(&dest[0], 0, FMT_RESET);
+                return 1;
+            }
+            else {
+                int ri = 0;
+                for (int di = 0; ri < rows && di < object_size(value.object); di++) {
+                    json_member memb = object_get(value.object, di);
+                    append_spaces(&dest[ri], indent);
+                    print_row(&dest[ri++], memb.key, di, memb.val, cols - indent, 0, 1);
+                    if (memb.val.kind == OBJECT || memb.val.kind == ARRAY) {
+                        ri += print_value(&dest[ri], memb.val, rows - ri,
+                                          cols, indent + 1);
+                    }
+                }
+                return ri;
+            }
+        case ARRAY:
+            if (array_size(value.array) == 0) {
+                if (indent > 0)
+                    return 0;
+                append_spaces(&dest[0], indent);
+                string_nprintf(&dest[0], 0, FMT_ITALIC);
+                string_nprintf(&dest[0], cols, "<Empty array>");
+                string_nprintf(&dest[0], 0, FMT_RESET);
+                return 1;
+            }
+            else {
+                int ri = 0;
+                for (int di = 0; ri < rows && di < array_size(value.array); di++) {
+                    json_value elt = array_get(value.array, di);
+                    append_spaces(&dest[ri], indent);
+                    print_row(&dest[ri++], "", di, elt, cols - indent, 0, 1);
+                    if (elt.kind == OBJECT || elt.kind == ARRAY) {
+                        ri += print_value(&dest[ri], elt, rows - ri, cols,
+                                          indent + 1);
+                    }
+                }
+                return ri;
+            }
+        default:
+            append_spaces(&dest[0], indent);
+            summarize_value(&dest[0], value, cols, 0);
+            return 1;
+    }
 }
 
 int get_num_items(json_value value) {
@@ -340,38 +411,33 @@ void populate_view(pane *p, json_pos pos, int is_top) {
     int curs_ri = -off + index;
     switch (value.kind) {
         case OBJECT:
-            if (object_size(value.object) == 0) {
-                assert(is_top);
-                string_nprintf(&p->rows[0], 0, FMT_ITALIC);
-                string_nprintf(&p->rows[0], p->ncols, "<Empty object>");
-                string_nprintf(&p->rows[0], 0, FMT_RESET);
-                break;
-            }
-            for (int ri = 0, di = off;
-                 ri < p->nrows && di < object_size(value.object);
-                 ri++, di++) {
-                json_member memb = object_get(value.object, di);
-                print_row(&p->rows[ri], memb.key, di, memb.val, p->ncols,
-                          !is_top && ri == curs_ri);
+            if (is_top)
+                print_value(p->rows, value, p->nrows, p->ncols, 0);
+            else {
+                for (int ri = 0, di = off;
+                    ri < p->nrows && di < object_size(value.object);
+                    ri++, di++) {
+                    json_member memb = object_get(value.object, di);
+                    print_row(&p->rows[ri], memb.key, di, memb.val, p->ncols,
+                              !is_top && ri == curs_ri, 0);
+                }
             }
             break;
         case ARRAY:
-            if (array_size(value.array) == 0) {
-                assert(is_top);
-                string_nprintf(&p->rows[0], 0, FMT_ITALIC);
-                string_nprintf(&p->rows[0], p->ncols, "<Empty array>");
-                string_nprintf(&p->rows[0], 0, FMT_RESET);
-                break;
-            }
-            for (int ri = 0, di = off;
-                 ri < p->nrows && di < array_size(value.array);
-                 ri++, di++) {
-                json_value elt = array_get(value.array, di);
-                print_row(&p->rows[ri], "", di, elt, p->ncols,
-                          !is_top && ri == curs_ri);
+            if (is_top)
+                print_value(p->rows, value, p->nrows, p->ncols, 0);
+            else {
+                for (int ri = 0, di = off;
+                    ri < p->nrows && di < array_size(value.array);
+                    ri++, di++) {
+                    json_value elt = array_get(value.array, di);
+                    print_row(&p->rows[ri], "", di, elt, p->ncols,
+                              !is_top && ri == curs_ri, 0);
+                }
             }
             break;
         case STRING: {
+            assert(is_top);
             char *s = value.string;
             if (s[0] == '\0') {
                 string_nprintf(&p->rows[0], p->ncols + 1 + 8,
@@ -384,7 +450,8 @@ void populate_view(pane *p, json_pos pos, int is_top) {
             break;
         }
         default:
-            summarize_value(&p->rows[0], value, p->ncols + 1);
+            assert(is_top);
+            summarize_value(&p->rows[0], value, p->ncols, 0);
     }
 }
 
@@ -502,6 +569,14 @@ void handle_mouse_press(int x, int y) {
 
     TRACE("ri = %d, si = %d\n", ri, si);
 
+    // handle right-most pane
+    if (si == 0) {
+        // TODO: navigate to item that was actually clicked
+        move_to_child();
+        return;
+    }
+
+    // get total rows
     json_pos *pos = stack_peekn(&stack, si);
     json_value val = pos->value;
     int tot_rows = 0;
@@ -512,21 +587,28 @@ void handle_mouse_press(int x, int y) {
     if (ri >= tot_rows)
         return;
 
-    if (si == 0)
-        move_to_child();
-
+    // unwind stack
+    stack_pop(&stack);
     for (int i = 0; i < si - 1; i++)
         stack_pop(&stack);
 
-    stack_pop(&stack);
     int num_items = get_num_items(stack_peek(&stack)->value);
     int off = get_row_off(&window.view_panes[pi], num_items, pos->index);
     TRACE("off = %d\n", off);
-    stack_peek(&stack)->index = off + ri;
-    move_to_child();
 
-    for (int i = 0; i < si - 2; i++)
+    // navigate to currently selected unfolded item
+    if (stack_peek(&stack)->index == off + ri && si == 1) {
         move_to_child();
+        move_to_child();
+    }
+    // move to another item
+    else {
+        stack_peek(&stack)->index = off + ri;
+        move_to_child();
+
+        for (int i = 0; i < si - 2; i++)
+            move_to_child();
+    }
 }
 
 void loop() {
