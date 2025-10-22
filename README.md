@@ -9,6 +9,14 @@ It allows navigation through a JSON file's tree structure using [Miller columns]
 
 Run `make` in the root directory.
 
+## Install
+
+### Arch Linux
+
+```bash
+yay -S jinsp-git
+```
+
 ## Usage
 
 Launch the interface by running `./jinsp <json file>`.
